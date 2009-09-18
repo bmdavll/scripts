@@ -1,0 +1,23 @@
+#!/bin/sh
+# fetch a line from a file by line number
+
+lineno=1
+
+while getopts 'l:' option
+do
+	case $option in
+	l)	lineno="$OPTARG"
+		;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+if [ -f "$1" -a -r "$1" ]; then
+	echo "With awk (preferred):"
+	time -f '%E' awk "NR==$lineno{print;exit}" "$1"
+	echo
+	echo "With sed (slower):"
+	time -f '%E' sed -n "$lineno{p;q}" "$1"
+else
+	exit 1
+fi

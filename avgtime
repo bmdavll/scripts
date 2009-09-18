@@ -1,0 +1,190 @@
+#!/bin/bash
+
+#########################################################################
+#
+#   2008-04-18  File created
+#   2009-03-06  Added option to use file input
+#
+#########################################################################
+
+PROG=$(basename "$0")
+VERSION="0.4"
+
+RUNS=5
+PRERUNS=1
+SCALE=3
+
+printUsage() {
+	echo "Usage: $PROG [--help] [-cv] [-r N] [-p N] [-f INPUT] COMMAND [ARG]..."
+}
+
+helpText() {
+cat << -EOF-
+$PROG $VERSION
+
+Run a simple command a specified number of times, suppressing all output. The
+average running time in seconds is calculated and output to stderr.
+
+$(printUsage)
+
+Options:
+    -c              continue if COMMAND returns a non-zero exit status (default
+                    is to exit on error)
+    -v              verbose (display messages for each run)
+    -r N            number of times to run COMMAND (default is $RUNS)
+    -p N            number of preruns, which do not factor into the average
+                    running time (default is $PRERUNS)
+    -f INPUT        feed INPUT from a file to COMMAND
+    -h, --help      display this help message and exit
+
+-EOF-
+}
+
+errorExit() {
+	if [[ "$1" =~ ^[0-9]+$ ]]
+	then code=$1 && shift
+	else code=3
+	fi
+	[ "$1" ] && echo >&2 "$PROG: $1"
+	exit $code
+}
+trap "errorExit aborted" 2 3
+trap "errorExit terminated" 1 15
+
+verbose() {
+	if [ "$vflag" ]; then
+		echo "$PROG: $@"
+	fi
+}
+
+max() {
+	if [ $1 -gt $2 ]; then
+		echo $1
+	else
+		echo $2
+	fi
+}
+
+INPUT=
+
+cflag=
+vflag=
+
+if [ "$1" = "--help" ]; then
+	helpText
+	exit 0
+fi
+
+while getopts 'hcvr:p:f:' option
+do
+	case $option in
+	h)		helpText
+			exit 0
+			;;
+	c)		cflag=1
+			;;
+	v)		vflag=1
+			;;
+	r)		RUNS="$OPTARG"
+			;;
+	p)		PRERUNS="$OPTARG"
+			;;
+	f)		INPUT="$OPTARG"
+			;;
+	?)		printUsage >&2
+			exit 2
+			;;
+	esac
+done
+shift $((OPTIND - 1))
+
+if [ $# -eq 0 ]; then
+	printUsage >&2
+	exit 2
+fi
+
+if [[ ! "$PRERUNS" =~ ^[0-9]+$ ]]; then
+	errorExit "$PRERUNS: invalid prerun number"
+
+elif [[ ! "$RUNS" =~ ^[0-9]+$ ]]; then
+	errorExit "$RUNS: invalid run number"
+
+elif ! which "$1" &>/dev/null; then
+	errorExit 127 "$1: command not found"
+
+elif [ "$INPUT" ]; then
+	if [ ! -f "$INPUT" ]; then
+		errorExit "$INPUT: File not found"
+	elif [ ! -r "$INPUT" ]; then
+		errorExit "$INPUT: Permission denied"
+	fi
+fi
+
+# main
+declare -i exitcode=0
+
+CMDSTR="${*:1:12}"
+[ "$CMDSTR" != "$*" ] && CMDSTR="$CMDSTR ..."
+[ "$INPUT" ] && CMDSTR="$CMDSTR < $INPUT"
+
+if [ $PRERUNS -eq 1 ]; then
+	verbose "prerunning once: $CMDSTR"
+elif [ $PRERUNS -gt 1 ]; then
+	verbose "prerunning $PRERUNS times: $CMDSTR"
+fi
+
+TIMEFORMAT="%${SCALE}R"
+
+for (( runno = 1; runno <= "$PRERUNS"; ++runno )); do
+	if [ "$INPUT" ]; then
+		runtime=$( (time "$@" < "$INPUT" &>/dev/null) 2>&1 )
+	else
+		runtime=$( (time "$@" &>/dev/null) 2>&1 )
+	fi
+	code=$?
+	verbose "prerun $runno (status $code): ${runtime}s"
+	if [ $code -ne 0 ]; then
+		if [ "$cflag" ]; then
+			exitcode=$(max $exitcode $code)
+		else
+			errorExit $code "nonzero status"
+		fi
+	fi
+done
+
+if [ $RUNS -eq 1 ]; then
+	verbose "running once: $CMDSTR"
+elif [ $RUNS -gt 1 ]; then
+	verbose "running $RUNS times: $CMDSTR"
+fi
+
+TIMEFORMAT="%${SCALE}R %P"
+avg=0 cpu=0
+
+for (( runno = 1; runno <= "$RUNS"; ++runno )); do
+	if [ "$INPUT" ]; then
+		tp=($( (time "$@" < "$INPUT" &>/dev/null) 2>&1 ))
+	else
+		tp=($( (time "$@" &>/dev/null) 2>&1 ))
+	fi
+	code=$?
+	verbose "run $runno (status $code): ${tp[0]}s"
+	if [ $code -ne 0 ]; then
+		if [ "$cflag" ]; then
+			exitcode=$(max $exitcode $code)
+		else
+			errorExit $code "nonzero status"
+		fi
+	fi
+	avg=$(echo "$avg + ${tp[0]}" | bc)
+	cpu=$(echo "$cpu + ${tp[1]}" | bc)
+done
+
+avg=$(echo "scale = $SCALE; $avg / $RUNS" | bc)
+cpu=$(echo "scale = $SCALE; $cpu / $RUNS" | bc)
+[ "${avg:0:1}" = "." ] && avg="0$avg"
+echo >&2 "${avg}s ${cpu}%"
+
+exit $exitcode
+
+# vim:set ts=4 sw=4 noet:

@@ -1,0 +1,157 @@
+#!/bin/bash
+
+#########################################################################
+#
+#   Copyright 2009 David Liang
+#
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#   Revisions:
+#   2009-04-12  File created
+#
+#########################################################################
+
+PROG=$(basename "$0")
+VERSION="0.1"
+
+printUsage() {
+	echo "Usage: $PROG [--help]"
+}
+
+helpText() {
+cat << -EOF-
+$PROG $VERSION
+
+
+$(printUsage)
+
+Options:
+  -h, --help        display this help message and exit
+  -?, --usage       display a short usage string and exit
+
+-EOF-
+}
+
+DEBUG=
+
+debug() {
+	if test "$DEBUG"; then
+		echo >&2 "$@"
+	fi
+}
+
+errorMsg() {
+	if [ $# -gt 0 ]; then
+		echo >&2 "$PROG: $@"
+	# else
+	#     echo >&2 "$PROG: error"
+	fi
+}
+
+errorUsage() {
+	printUsage >&2
+	if [ $# -gt 0 ]; then
+		echo >&2
+		errorMsg "$@"
+	fi
+	exit 2
+}
+
+cleanUp() {
+	rm -f "$TEMPFILE"
+}
+
+normalExit() {
+	cleanUp
+	exit $code
+}
+
+# errorExit ["message"]
+errorExit() {
+	errorMsg "$@"
+	# [ "$1" ] && echo >&2 "$PROG: $1"
+	cleanUp
+	exit 3
+}
+
+# errorExit [$code] ["message"]
+errorExit() {
+	if [[ "$1" =~ ^[0-9]+$ ]]
+	then code=$1 && shift
+	else code=3
+	fi
+	errorMsg "$@"
+	# [ "$1" ] && echo >&2 "$PROG: $1"
+	cleanUp
+	exit $code
+}
+# INT QUIT
+# HUP TERM
+trap "errorExit aborted" 2 3
+trap "errorExit terminated" 1 15
+
+catchError() {
+	if [ $? -ne 0 ]; then
+		errorExit "$@"
+	fi
+}
+
+makeTemp() {
+	local TEMPDIR
+	if [ -d "$HOME/tmp" ]
+	then TEMPDIR="$HOME/tmp"
+	else TEMPDIR=/tmp
+	fi
+	TEMPFILE=$(mktemp -q -p "$TEMPDIR" "$PROG.$$.XXXX")
+	if [ $? -ne 0 ]; then
+		errorExit "Could not create temp file"
+	fi
+}
+TEMPFILE=
+
+bflag=
+
+if [ "$1" = "--help" ]; then
+	helpText
+	exit 0
+fi
+
+while getopts 'ha:b' option
+do
+	case $option in
+	h)		helpText
+			exit 0
+			;;
+	a)		echo "$OPTARG"
+			;;
+	b)		bflag=1
+			;;
+	?)		printUsage >&2
+			exit 2
+			;;
+	?)		errorUsage
+			;;
+	esac
+done
+shift $((OPTIND - 1))
+
+# main
+declare -i code=0
+
+makeTemp
+
+
+normalExit
+
+# vim:set ts=4 sw=4 noet:

@@ -1,0 +1,23 @@
+#!/bin/bash
+# resolve the absolute path of a file or directory
+# arguments: 1 (a file descriptor string)
+# returns: 0 if successful; 1 if file cannot be found; 2 on other errors
+
+[ $# -ne 1 ] && exit 2
+
+IFS=$'\n'
+
+if [ -d "$1" ]; then
+	abspath=$(cd -- "$1" 2>/dev/null && pwd)
+elif [ -e "$1" ]; then
+	abspath=$(cd -- "$(dirname -- "$1")" 2>/dev/null && pwd) &&
+	abspath="${abspath%/}/$(basename -- "$1")"
+else
+	exit 1
+fi
+
+if [ $? -eq 0 ]; then
+	echo "$abspath"
+else
+	exit 2
+fi

@@ -1,0 +1,5 @@
+#!/bin/sh
+
+epoch=$1 && shift
+
+date -d "1970-01-01 $epoch sec GMT" "$@"

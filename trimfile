@@ -1,0 +1,158 @@
+#!/bin/sh
+
+#########################################################################
+#
+#   Trim trailing whitespace from text files
+#
+#   2008-04-21  File created
+#   2009-01-29  Added -r option
+#   2009-03-16  Added -v option
+#
+#########################################################################
+
+PROG=`basename "$0"`
+VERSION="0.4"
+IFS='
+'
+
+printUsage() {
+	echo "Usage: $PROG [--help] [-rR] [-fvn] FILE..."
+}
+
+helpText() {
+cat << -EOF-
+$PROG $VERSION
+
+Read files on the command line and for text files, trim any trailing whitespace
+(spaces and tabs) from lines using \`awk'. Only files that have trailing
+whitespace are modified. Modified file names are printed to stdout.
+
+`printUsage`
+
+Options:
+    -r, -R          recurse into directories
+    -f              force processing of all files (skip file type check for
+                    text files using \`file')
+    -v              verbose (display warning and error messages)
+    -n              dry run (only print names of files that would be modified)
+    -h, --help      display this help message and exit
+
+-EOF-
+}
+
+errorMsg() {
+	if [ $# -gt 0 ]; then
+		echo >&2 "$PROG: $@"
+	fi
+}
+
+cleanUp() {
+	rm -f "$TEMPFILE"
+}
+
+normalExit() {
+	cleanUp
+	exit $code
+}
+
+errorExit() {
+	errorMsg "$@"
+	cleanUp
+	exit 3
+}
+trap "errorExit aborted" 2 3
+trap "errorExit terminated" 1 15
+
+makeTemp() {
+	local TEMPDIR
+	if [ -d "$HOME/tmp" ]
+	then TEMPDIR="$HOME/tmp"
+	else TEMPDIR=/tmp
+	fi
+	TEMPFILE=`mktemp -q -p "$TEMPDIR" "$PROG.$$.XXXX"`
+	if [ $? -ne 0 ]; then
+		errorExit "Could not create temp file"
+	fi
+}
+TEMPFILE=
+
+rflag=
+fflag=
+vflag=
+nflag=
+
+if [ "$1" = "--help" ]; then
+	helpText
+	exit 0
+fi
+
+while getopts 'hrRfvn' option
+do
+	case $option in
+	h)		helpText
+			exit 0
+			;;
+	r|R)	rflag=1
+			;;
+	f)		fflag=1
+			;;
+	v)		vflag=1
+			;;
+	n)		nflag=1
+			;;
+	?)		printUsage >&2
+			exit 2
+			;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+if [ $# -eq 0 ]; then
+	printUsage >&2
+	exit 2
+fi
+
+# main
+code=0
+
+makeTemp
+
+trimFile() {
+	local returncode=0
+	if [ -d "$1" ]; then
+		if [ "$rflag" ]; then
+			for file in `find "$1" -type f`; do
+				trimFile "$file"
+				returncode=`expr $returncode + $?`
+			done
+		else
+			[ "$vflag" ] && errorMsg "$1: Omitting directory"
+		fi
+	elif [ ! -f "$1" ]; then
+		[ "$vflag" ] && errorMsg "$1: File not found"
+		returncode=1
+	elif [ ! -r "$1" -o ! -w "$1" ]; then
+		[ "$vflag" ] && errorMsg "$1: Permission denied"
+		returncode=1
+	elif [ ! "$fflag" ] && ! file -b "$1" | grep -i "\<text\>" >/dev/null; then
+		[ "$vflag" ] && errorMsg "$1: Not a text file"
+	else
+		awk '{ sub(/[[:blank:]]+$/,""); print }' "$1" >"$TEMPFILE"
+		[ $? -ne 0 ] && errorExit "Awk processing error"
+		if ! cmp -s "$TEMPFILE" "$1"; then
+			[ ! "$nflag" ] && cp "$TEMPFILE" "$1"
+			echo "$1"
+		fi
+	fi
+	return $returncode
+}
+
+for arg in "$@"
+do
+	trimFile "$arg"
+	code=`expr $code + $?`
+done
+
+normalExit
+
+# vim:set ts=4 sw=4 noet ft=sh:

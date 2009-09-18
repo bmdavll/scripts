@@ -1,0 +1,56 @@
+#!/bin/bash
+# base conversion
+
+errorExit() {
+	echo >&2 "Usage: $(basename "$0") [xdob][xdob] [ NUM... | -e RPN... ]"
+	echo >&2
+	[ "$1" ] && echo >&2 "$(basename "$0"): $1"
+	exit 2
+}
+
+argv=()
+
+while [ "${1:0:1}" = "-" ]; do
+	argv+=("$1")
+	shift
+done
+
+[ $# -eq 0 ] && errorExit
+
+case "$1" in
+	d?)	;;
+	x?)	expr="16i" ;;
+	o?)	expr="8i"  ;;
+	b?)	expr="2i"  ;;
+	*)	errorExit "bad option" ;;
+esac
+case "$1" in
+	?d)	;;
+	?x)	expr="16o$expr" ;;
+	?o)	expr="8o$expr"  ;;
+	?b)	expr="2o$expr"  ;;
+	*)	errorExit "bad option" ;;
+esac
+shift
+
+set -- "${argv[@]}" "$@"
+
+if [ "$1" = "-e" ]; then
+	shift
+	if [ $# -gt 0 ]; then
+		expr="$expr $(echo "$*" | tr 'a-f' 'A-F') p"
+	fi
+else
+	while [ $# -gt 0 ]; do
+		if [ $# -eq 1 ]; then
+			expr="$expr $1 p"
+		else
+			expr="$expr $1 n[ ]P"
+		fi
+		shift
+	done
+fi
+
+dc -e "$expr"
+
+# vim:set ts=4 sw=4 noet ft=sh:

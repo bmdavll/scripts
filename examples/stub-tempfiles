@@ -1,0 +1,44 @@
+#!/bin/bash
+
+PROG=$(basename "$0")
+
+cleanUp() {
+	rm -rf "$TEMPDIR"
+}
+
+makeTemp() {
+	if [ -d "$HOME/tmp" ]
+	then TEMPDIR=$(mktemp -qd -p "$HOME/tmp" "$PROG.$$.XXXX")
+	else TEMPDIR=$(mktemp -qd -p       /tmp  "$PROG.$$.XXXX")
+	fi
+	if [ $? -ne 0 ]; then
+		errorExit "Could not create temp directory"
+	fi
+}
+TEMPDIR=
+
+newTemp() {
+	eval "$1=\$(mktemp -q -p \"$TEMPDIR\" \"XXXXXX\")"
+    if [ $? -ne 0 ]; then
+        errorExit "Could not create temp file"
+    fi
+}
+
+makeTemp
+
+# calls
+newTemp file
+echo "text" >"$file"
+cat "$file"
+
+count=0
+foo() {
+	((count++))
+	newTemp foo${count}
+	handle=$(eval "expr \"\$foo${count}\"")
+	echo "foo${count}" >$handle
+	cat $handle
+}
+foo && foo
+
+cleanUp

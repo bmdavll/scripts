@@ -1,0 +1,100 @@
+#!/bin/sh
+
+PROG=`basename "$0"`
+VERSION="0.1"
+IFS='
+'
+
+printUsage() {
+	echo "Usage: $PROG [-v] FILE"
+}
+
+helpText() {
+cat << -EOF-
+$PROG $VERSION
+
+`printUsage`
+-EOF-
+}
+
+errorMsg() {
+	if [ $# -gt 0 ]; then
+		echo >&2 "$PROG: $@"
+	fi
+}
+
+cleanUp() {
+	rm -f "$TEMPFILE"
+}
+
+errorExit() {
+	errorMsg "$@"
+	cleanUp
+	exit 3
+}
+trap "errorExit aborted" 2 3
+trap "errorExit terminated" 1 15
+
+makeTemp() {
+	local TEMPDIR
+	if [ -d "$HOME/tmp" ]
+	then TEMPDIR="$HOME/tmp"
+	else TEMPDIR=/tmp
+	fi
+	TEMPFILE=`mktemp -q -p "$TEMPDIR" "$PROG.$$.XXXX"`
+	if [ $? -ne 0 ]; then
+		errorExit "Could not create temp file"
+	fi
+}
+TEMPFILE=
+
+vflag=
+
+if [ "$1" = "--help" ]; then
+	helpText
+	exit 0
+fi
+
+while getopts 'hv' option
+do
+	case $option in
+	h)		helpText
+			exit 0
+			;;
+	v)		vflag=1
+			;;
+	?)		printUsage >&2
+			exit 2
+			;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+if [ $# -ne 1 ]; then
+	printUsage >&2
+	exit 2
+fi
+
+# main
+makeTemp
+
+if [ -d "$1" ]; then
+	errorExit "$1: Is a directory"
+elif [ -h "$1" ]; then
+	dest=`readlink -m "$1"`
+else
+	dest="$1"
+fi
+
+cat /dev/stdin >"$TEMPFILE"
+[ $? -ne 0 ] && errorExit
+
+if [ ! -e "$dest" ] || ! cmp -s "$TEMPFILE" "$dest"; then
+	cp "$TEMPFILE" "$dest"
+	[ "$vflag" ] && echo "$dest"
+fi
+
+cleanUp
+exit 0
+
+# vim:set ts=4 sw=4 noet ft=sh:

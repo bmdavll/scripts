@@ -1,0 +1,34 @@
+#!/bin/bash
+# escape characters in a string
+# usage: escape [STRING|-] [CHARS]...
+# example: escape "'foo' (bar)" '()' "'"
+
+if [ $# -eq 0 -o "$1" = "-" ]; then
+	str="$(cat /dev/stdin)"
+else
+	str="$1"
+fi
+shift
+
+if [ "$(expr index "$*" "\\")" -ne 0 ]; then
+	str="${str//\\/\\\\}"
+fi
+
+for chars in "$@"; do
+	while [ "$chars" ]; do
+		c="${chars:0:1}" && chars="${chars:1}"
+		if [ "$c" = "(" ]; then
+			str="${str//\(/\\$c}"
+		elif [ "$c" = "*" ]; then
+			str="${str//\*/\\$c}"
+		elif [ "$c" = "?" ]; then
+			str="${str//\?/\\$c}"
+		else
+			str="${str//$c/\\$c}"
+		fi
+	done
+done
+
+[ "$str" ] && echo "$str"
+
+exit 0

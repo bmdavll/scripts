@@ -1,0 +1,38 @@
+#!/bin/bash
+#!/bin/bash -x
+
+export PS4='◘${LINENO}:${FUNCNAME[0]}${FUNCNAME[0]:+:} '
+
+printStack() {
+	echo "Current stack: ${FUNCNAME[@]}"
+}
+trap "printStack >&2" ERR
+
+foo() {
+	bar
+}
+bar() {
+	baz
+}
+baz() {
+	printStack
+	false
+}
+
+set -x
+
+echo "Date: $(date +'%Y-%m-%d')"
+foo
+
+set +x
+
+# see shopt -s extdebug
+debugPrint() {
+	if [ "${REPLY+set}" ]; then
+		echo "REPLY has been set"
+	fi
+}
+trap "debugPrint" DEBUG
+
+REPLY=
+:

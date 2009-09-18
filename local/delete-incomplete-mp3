@@ -1,0 +1,30 @@
+#!/bin/bash
+
+KB_LIM=250
+LEN_LIM=10
+
+IFS=$'\n'
+
+declare -i code
+
+[ $# -eq 0 ] && set "."
+
+find "$@" -type f -iname "*.mp3" -size -${KB_LIM}k && \
+find "$@" -type f -iname "*.mp3" -size -${KB_LIM}k -exec rm {} +
+code=$?
+
+if type mp3info &>/dev/null; then
+	for file in $(find "$@" -type f -iname "*.mp3")
+	do
+		if [ "$(mp3info -p '%S' "$file")" -lt $LEN_LIM ]; then
+			echo "$file"
+			rm "$file"
+			[ $? -ne 0 ] && code+=1
+		fi
+	done
+else
+	echo >&2 "mp3info not found"
+	code+=1
+fi
+
+exit $code

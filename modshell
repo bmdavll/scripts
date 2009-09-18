@@ -1,0 +1,176 @@
+#!/bin/bash
+
+#########################################################################
+#
+#   Change the interpreter shell for scripts
+#
+#   2009-04-14  File created
+#
+#########################################################################
+
+PROG=$(basename "$0")
+
+printUsage() {
+	echo "Usage: $PROG OLD_SHELL NEW_SHELL [-rR] [-l LIMIT] [-vn] SCRIPT..."
+}
+
+errorMsg() {
+	if [ $# -gt 0 ]; then
+		echo >&2 "$PROG: $@"
+	fi
+}
+
+cleanUp() {
+	rm -f "$TEMPFILE"
+}
+
+normalExit() {
+	cleanUp
+	exit $code
+}
+
+errorExit() {
+	if [[ "$1" =~ ^[0-9]+$ ]]
+	then code=$1 && shift
+	else code=3
+	fi
+	errorMsg "$@"
+	cleanUp
+	exit $code
+}
+trap "errorExit aborted" 2 3
+trap "errorExit terminated" 1 15
+
+makeTemp() {
+	local TEMPDIR
+	if [ -d "$HOME/tmp" ]
+	then TEMPDIR="$HOME/tmp"
+	else TEMPDIR=/tmp
+	fi
+	TEMPFILE=$(mktemp -q -p "$TEMPDIR" "$PROG.$$.XXXX")
+	if [ $? -ne 0 ]; then
+		errorExit "Could not create temp file"
+	fi
+}
+TEMPFILE=
+
+SHELLS=(bash sh ash dash ksh csh tcsh zsh python python3 perl ruby)
+
+checkShell() {
+	local shell
+	for shell in "${SHELLS[@]}"; do
+		if [ "$1" = "$shell" ]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+declare -a argv
+
+while [[ $# -gt 0 && "$1" != -* ]]; do
+	argv+=("$1") && shift
+done
+
+rflag=
+vflag=
+nflag=
+
+LIMIT=1
+
+while getopts 'hrRl:vn' option
+do
+	case $option in
+	h)		printUsage
+			exit 0
+			;;
+	r|R)	rflag=1
+			;;
+	l)		LIMIT="$OPTARG"
+			;;
+	v)		vflag=1
+			;;
+	n)		nflag=1
+			;;
+	?)		printUsage >&2
+			exit 2
+			;;
+	esac
+done
+shift $((OPTIND - 1))
+
+set -- "${argv[@]}" "$@"
+unset argv
+
+if [ $# -lt 3 ]; then
+	printUsage >&2
+	exit 2
+fi
+
+OLD="$1"
+NEW="$2"
+shift 2
+
+if ! checkShell "$OLD"; then
+	errorExit 2 "$OLD doesn't appear to be a valid shell"
+elif ! checkShell "$NEW"; then
+	errorExit 2 "$NEW doesn't appear to be a valid shell"
+elif [ "$OLD" = "$NEW" ]; then
+	[ "$vflag" ] && errorMsg "Nothing to be done"
+	exit 0
+fi
+
+if [[ ! "$LIMIT" =~ ^[1-9][0-9]*$ ]]; then
+	errorExit 2 "Invalid argument to -l: $LIMIT"
+fi
+
+# main
+declare -i code=0
+
+makeTemp
+
+modShell() {
+	local -i returncode=0
+	if [ -d "$1" ]; then
+		if [ "$rflag" ]; then
+			for file in $(find "$1" -type f); do
+				modShell "$file"
+				returncode+=$?
+			done
+		else
+			[ "$vflag" ] && errorMsg "$1: Omitting directory"
+		fi
+	elif [ ! -f "$1" ]; then
+		[ "$vflag" ] && errorMsg "$1: File not found"
+		returncode=1
+	elif [ ! -r "$1" -o ! -w "$1" ]; then
+		[ "$vflag" ] && errorMsg "$1: Permission denied"
+		returncode=1
+	elif ! file -b "$1" | grep -iq "\<text\>"; then
+		[ "$vflag" ] && errorMsg "$1: Not a text file"
+	else
+		awk -v LIMIT="$LIMIT" 'NR <= LIMIT {
+				$0 = gensub(/^(#!\/bin\/)'"$OLD"'$/, "\\1'"$NEW"'", 1);
+				$0 = gensub(/^(#!\/usr\/bin\/)'"$OLD"'$/, "\\1'"$NEW"'", 1);
+				$0 = gensub(/^(#!\/usr\/bin\/env[[:blank:]]+)'"$OLD"'$/, "\\1'"$NEW"'", 1);
+				print;
+			}
+			NR > LIMIT { print }' "$1" >"$TEMPFILE"
+		[ $? -ne 0 ] && errorExit "Awk processing error"
+		if ! cmp -s "$TEMPFILE" "$1"; then
+			[ ! "$nflag" ] && cp "$TEMPFILE" "$1"
+			echo "$1"
+		fi
+	fi
+	return $returncode
+}
+
+for arg in "$@"
+do
+	modShell "$arg"
+	code+=$?
+done
+
+normalExit
+
+# vim:set ts=4 sw=4 noet ft=sh:

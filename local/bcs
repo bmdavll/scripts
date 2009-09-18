@@ -1,0 +1,118 @@
+#!/bin/sh
+# search bash cheat sheet for an entry
+
+PROG=`basename "$0"`
+FILE=~/code/doc/bcs
+
+printUsage() {
+	echo "Usage: $PROG [-e] [-n] [-m] PATTERN"
+}
+
+cleanUp() {
+	rm -f "$TEMPFILE"
+}
+
+normalExit() {
+	cleanUp
+	exit 0
+}
+
+errorExit() {
+	[ "$1" ] && echo >&2 "$PROG: $1"
+	cleanUp
+	exit 3
+}
+
+makeTemp() {
+	local TEMPDIR
+	if [ -d "$HOME/tmp" ]
+	then TEMPDIR="$HOME/tmp"
+	else TEMPDIR=/tmp
+	fi
+	TEMPFILE=`mktemp -q -p "$TEMPDIR" "$PROG.$$.XXXX"`
+	if [ $? -ne 0 ]; then
+		errorExit "Could not create temp file"
+	fi
+}
+TEMPFILE=
+
+nline=
+mflag=
+
+while getopts 'enm' option
+do
+	case $option in
+	e)	$EDITOR "$FILE"
+		exit
+		;;
+	n)	nline=1
+		;;
+	m)	mflag=1
+		;;
+	?)	printUsage >&2
+		exit 2
+		;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+if [ -z "$*" ]; then
+	printUsage >&2
+	exit 2
+fi
+
+# main
+makeTemp
+
+if [ "$nline" ]; then
+	lines=`wc -l "$FILE" | awk '{print $1}'`
+	nline='"%'${#lines}'s ", NR'
+else
+	nline='""'
+fi
+
+if [ "$mflag" ]; then
+	pattern="[^[:blank:]].*$*.*"
+else
+	pattern="$*.*"
+fi
+
+expand "$FILE" | awk -v IGNORECASE=1 "
+BEGIN {
+	matches = 0;
+	region = 0;
+}
+region == 1 {
+	if (\$0 ~ /^[[:blank:]]+[^[:blank:]]/) {
+		printf $nline;
+		print \$0;
+	} else {
+		region = 0;
+	}
+}
+region == 0 {
+	if (\$0 ~ /^$pattern$/) {
+		matches++;
+		printf $nline;
+		print \$0;
+		region = 1;
+	}
+}
+END {
+	if (!matches)
+		exit 1;
+}" >"$TEMPFILE"
+
+if [ -s "$TEMPFILE" ]; then
+	[ -z "$LINES" ] && errorExit "Please export LINES"
+	if [ `wc -l "$TEMPFILE" | awk '{print $1}'` -gt `expr $LINES - 1` ]
+	then less "$TEMPFILE"
+	else cat "$TEMPFILE"
+	fi
+else
+	errorExit "No results"
+fi
+
+normalExit
+
+# vim:set ts=4 sw=4 noet ft=sh:

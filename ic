@@ -1,0 +1,68 @@
+#!/bin/bash
+
+declare -i total
+
+qflag=
+
+while getopts 'tq' option
+do
+	case $option in
+	t)		total=0
+			;;
+	q)		qflag=1
+			;;
+	?)		echo "Usage: $(basename "$0") [-t] [DIR]..."
+			exit 2
+			;;
+	esac
+done
+shift $((OPTIND - 1))
+
+declare -i code=0
+
+count() {
+	local nohidden=(*) hidden=(.*)
+	if [ -e "$nohidden" ]; then
+		nohidden=${#nohidden[@]}
+	else
+		nohidden=0
+	fi
+	hidden=$(( ${#hidden[@]} - 2 ))
+
+	if [ "$total" ]; then
+		total+=$nohidden
+		total+=$hidden
+	else
+		if [ $hidden -gt 0 ]; then
+			echo "$nohidden (plus $hidden hidden)"
+		else
+			echo "$nohidden"
+		fi
+	fi
+}
+
+if [ $# -eq 0 ]; then
+	count
+else
+	for arg in "$@"; do
+		if [ ! -d "$arg" ]; then
+			echo >&2 "$arg: Not a directory"
+			code+=1
+		elif [ ! -r "$arg" -o ! -x "$arg" ]; then
+			echo >&2 "$arg: Permission denied"
+			code+=1
+		elif pushd -- "$arg" &>/dev/null; then
+			[ ! "$total" -a ! "$qflag" ] && echo -n "$arg: "
+			count
+			popd >/dev/null || exit $?
+		else
+			code+=1
+		fi
+	done
+fi
+
+[ "$total" ] && echo "$total"
+
+exit $code
+
+# vim:set ts=4 sw=4 noet ft=sh:

@@ -1,0 +1,168 @@
+#!/bin/bash
+
+#########################################################################
+#
+#   cpufreq-set menu
+#
+#   2008-04-23  File created
+#
+#########################################################################
+
+PROG=$(basename "$0")
+
+helpText() {
+cat << -EOF-
+cpufreq-set menu
+
+Display current CPU frequency policy from \`cpufreq-info'. Show a menu for
+interactively setting the minimum and maximum frequencies and the frequency
+governor using \`cpufreq-set'. Requires the \`cpufrequtils' package.
+
+Usage: $PROG [--help]
+
+-EOF-
+}
+
+if [ $# -gt 0 ]; then
+	case $1 in
+		--help|-h|-\?)	helpText
+						exit 0
+						;;
+		*)				helpText
+						exit 2
+						;;
+	esac
+fi
+
+errorExit() {
+	[ "$1" ] && echo >&2 "$PROG: $1"
+	exit 3
+}
+
+if ! which cpufreq-set &>/dev/null; then
+	errorExit "cpufreq-set not found"
+fi
+
+IFS=$'\n'
+
+freq=($(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_available_frequencies 2>/dev/null \
+		| gawk -v RS='[[:space:]]+' '{ print }' | sort -nu))
+govs=($(cpufreq-info -g 2>/dev/null | awk '{ for (i = 1; i <= NF; ++i) print $i }'))
+
+[ ${#freq[@]} -eq 0 ] && errorExit "Could not get available frequencies"
+[ ${#govs[@]} -eq 0 ] && errorExit "Could not get available governors"
+
+list=($(echo "${freq[@]}" | gawk -v RS=' ' '{
+	if (match($0, /[0-9]+/)) {
+		freq = int(substr($0, RSTART, RLENGTH))
+		if (freq >= 1000000) {
+			printf "%.2f GHz\n", freq/1000000
+		} else if (freq >= 1000) {
+			print freq/1000" MHz"
+		} else {
+			print freq" KHz"
+		}
+	} else exit 1;
+}'))
+[ $? -ne 0 ] && list=("${freq[@]}")
+
+EOF=$(stty -a | grep "eof" | awk -v RS=';' '$1 == "eof" { print substr($3, 2, 1) }')
+
+pressEnter() {
+	echo
+	echo -n "Press Enter to continue..."
+	read
+}
+
+setFreq() {
+	echo "Choose $1 frequency: (Ctrl-$EOF to cancel)"
+	echo
+	select frequency in "${list[@]}"; do
+		if [ -z "$frequency" ]; then
+			continue
+		else
+			break
+		fi
+	done
+	[ $? -ne 0 ] && return
+	echo
+	if ! sudo echo &>/dev/null; then
+		echo >&2 "Root permission needed"
+		return
+	fi
+	case $1 in
+	min)	sudo cpufreq-set --min "${freq[$((REPLY-1))]}"
+			[ $? -eq 0 ] && msg="Minimum frequency set to ${list[$((REPLY-1))]}"
+			;;
+	max)	sudo cpufreq-set --max "${freq[$((REPLY-1))]}"
+			[ $? -eq 0 ] && msg="Maximum frequency set to ${list[$((REPLY-1))]}"
+			;;
+	esac
+	[ $? -ne 0 ] && pressEnter
+}
+
+setGov() {
+	echo "Available governors: (Ctrl-$EOF to cancel)"
+	echo
+	select governor in "${govs[@]}"; do
+		if [ -z "$governor" ]; then
+			continue
+		else
+			break
+		fi
+	done
+	[ $? -ne 0 ] && return
+	echo
+	if ! sudo echo &>/dev/null; then
+		echo >&2 "Root permission needed"
+		return
+	fi
+	sudo cpufreq-set --governor "${govs[$((REPLY-1))]}"
+	if [ $? -eq 0 ]; then
+		msg="Governor set to ${govs[$((REPLY-1))]}"
+	else
+		pressEnter
+	fi
+}
+
+selection=
+until [ "$selection" = "0" ]; do
+	clear
+	echo "cpufreq-set menu"
+	echo
+	echo "Current policy"
+	echo "=============="
+	cpufreq-info -o
+	echo
+	echo "1 - Set min frequency"
+	echo "2 - Set max frequency"
+	echo "3 - Set governor"
+	echo
+	echo "0 - Exit"
+	echo
+	if [ -n "$msg" ]; then
+		echo "$msg"
+		echo
+		msg=
+	fi
+	echo -n "Enter selection: "
+	read selection
+	echo
+	selection=$(echo "$selection" | sed 's/^[[:blank:]]*0*\([[:digit:]]\)[[:blank:]]*$/\1/')
+	case "$selection" in
+	1)		setFreq min
+			;;
+	2)		setFreq max
+			;;
+	3)		setGov
+			;;
+	0|'')	break
+			;;
+	*)		msg="Please enter 1, 2, 3, or 0"
+			;;
+	esac
+done
+
+exit 0
+
+# vim:set ts=4 sw=4 noet:

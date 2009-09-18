@@ -1,0 +1,20 @@
+#!/bin/sh
+
+ONLY=0
+WIDTH=42
+
+if [ "$1" = "-o" ]; then
+	ONLY=1
+fi
+
+if echo "$1" | grep '^[0-9]\+$' >/dev/null; then
+	WIDTH=$1
+fi
+
+awk '{
+	sub(/^Only in /, "");
+	if (match($0, /^Files (.*) and (.*) differ$/, a)) {
+		if (!'$ONLY')
+			printf("%-'$WIDTH's %s\n", a[1], a[2]);
+	} else print;
+}'

@@ -1,0 +1,15 @@
+#!/bin/bash
+
+mkfifo temp
+
+cat < temp &
+
+# assigning fd 3 to the pipe
+exec 3>temp
+
+# writing to fd 3 instead of reopening the pipe
+echo >&3 'hello'
+# ...
+
+# closing the fd
+exec 3>&-

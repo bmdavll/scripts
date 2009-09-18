@@ -1,0 +1,41 @@
+#!/bin/sh
+# show a selection menu at the console
+
+pressEnter() {
+	echo
+	echo -n "Press Enter to continue..."
+	read REPLY
+}
+
+selection=
+until [ "$selection" = "0" ]; do
+	clear
+	echo "Menu"
+	echo
+	echo "1 - Display free disk space"
+	echo "2 - Display free memory"
+	echo
+	echo "0 - Exit program"
+	echo
+	if [ -n "$msg" ]; then
+		echo "$msg"
+		echo
+		msg=
+	fi
+	echo -n "Enter selection: "
+	read selection
+	echo
+	selection=`echo "$selection" | sed 's/^[[:blank:]]*0*\([[:digit:]]\+\)[[:blank:]]*$/\1/'`
+	case "$selection" in
+	1)		df -h
+			pressEnter
+			;;
+	2)		free -m
+			pressEnter
+			;;
+	0|'')	break
+			;;
+	*)		msg="Please enter 1, 2, or 0"
+			;;
+	esac
+done

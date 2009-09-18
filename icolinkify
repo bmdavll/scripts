@@ -1,0 +1,139 @@
+#!/bin/bash
+
+IFS=$'\n'
+
+# system icon path
+PRE="/usr/share/icons"
+
+# subdirectories in which to look for icons
+PATHS=('apps' 'extras')
+
+# possible png icon sizes
+SIZES=(256 192 128 96 72 64 48 36 32 24 22 16)
+
+# MAP: custom icon mapping specification
+# (known bug in bash prevents arrays from being exported)
+# usage example:
+#	declare -A pixmaps	# or whatever
+#	pixmaps[emacs-icon]=apps/emacs
+#	...
+#	sudo MAP="$(declare -p pixmaps)" icolinkify GartoonRedux /usr/share/pixmaps
+if [[ "$MAP" =~ ^'declare -A '([[:alnum:]]+)=.+$ ]]; then
+	eval "$MAP"
+	MAP="${BASH_REMATCH[1]}"
+	if [[ "$(declare -p "$MAP" 2>/dev/null)" != "declare -A"* ]]; then
+		MAP=
+	fi
+else
+	MAP=
+fi
+
+if [ $# -eq 0 -o -z "$1" ]; then
+	echo >&2 "Usage: $(basename "$0") THEME [PATH]..."
+	exit 2
+elif [ -d "$PRE/$1" -a -f "$PRE/$1/index.theme" ]; then
+	THEME="$PRE/${1%/}" && shift
+else
+	echo >&2 "$1: Theme not found"
+	exit 1
+fi
+
+abs() {
+	local arg list sep
+	for arg in "$@"; do
+		if (( arg < 0 ))
+		then list+="$sep$((-arg))"
+		else list+="$sep$arg"
+		fi
+		sep="$IFS"
+	done
+	[ "$list" ] && echo "$list"
+}
+ping() {
+	local size diffs=() file="$1" && shift
+	for size in "${SIZES[@]}"; do
+		diffs+=($(( size - $1 )))
+	done
+	local -i min=0 idx=0 closest diff
+	for diff in $(abs "${diffs[@]}"); do
+		size="${SIZES[$idx]}"
+		if (( diff == 0 )) && [ -d "$THEME/${size}x${size}" ]
+		then
+			min=0 && break
+		elif (( min == 0 || diff < min )) && [ -d "$THEME/${size}x${size}" ]
+		then
+			min="$diff"
+			closest="$size"
+		fi
+		idx+=1
+	done
+	(( min > 0 )) && set -- "$closest"
+	for size in "$@"; do
+		search "${size}x${size}" "$file" && return 0
+	done
+	return 1
+}
+search() {
+	local dir size="$1" file="$2" && shift 2
+	if [ "$MAP" ]; then
+		local base=$(basename -- "$file") target
+		target=$(eval 'echo "${'"$MAP[${base%.*}]"'}"' 2>/dev/null)
+		if [ "$target" ]; then
+			link "$THEME/$size/$target.${base##*.}" "$file" && return 0
+		fi
+	fi
+	for dir in "${PATHS[@]}"; do
+		link "$THEME/$size/$dir/$(basename -- "$file")" "$file" && return 0
+	done
+	return 1
+}
+link() {
+	if [ -f "$1" -a ! -d "$2" ]; then
+		ln -fs "$1" "$2" && echo "$2"
+		return 0
+	else
+		return 1
+	fi
+}
+hw() {
+	local IFS=' '
+	set -- $@
+	height="$1"
+	width="$2"
+}
+
+declare -i code=0
+
+[ $# -eq 0 ] && set .
+for path in "$@"; do
+	if [ ! -d "$path" ]; then
+		echo >&2 "$path: No such directory"
+		code+=1
+		continue
+	fi
+	for svg in $(ls -d "$path"/*.svg 2>/dev/null); do
+		search "scalable" "$svg"
+		if [ $? -ne 0 ]; then
+			echo >&2 "$svg: Target icon not found"
+			code+=1
+		fi
+	done
+	for png in $(ls -d "$path"/*.png 2>/dev/null); do
+		hw $(identify -format "%h %w" "$png")
+		if [ -z "$height" -o -z "$width" ]; then
+			echo >&2 "$png: Couldn't determine dimensions"
+			code+=1
+			continue
+		fi
+		if (( $height > $width ))
+		then ping "$png" $height $width
+		else ping "$png" $width $height
+		fi
+		if [ $? -ne 0 ]; then
+			echo >&2 "$png: Target icon not found"
+			code+=1
+		fi
+	done
+done
+
+exit $code

@@ -1,0 +1,50 @@
+#!/bin/bash
+
+declare -a argv
+declare rest
+
+bflag=
+VALUE=
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	# help/usage
+	-h*|--help)		helpText
+					exit 0
+					;;
+	-\?*|--usage)	printUsage
+					exit 0
+					;;
+	-b|--boolean)	bflag=1 && shift
+					;;
+	-b*)			bflag=1
+					rest="${1:2}" && shift
+					[ "${rest:0:1}" != "-" ] && rest="-$rest"
+					set -- "$rest" "$@"
+					;;
+	-v)				shift
+					[ ! "$1" ] && errorUsage "-v requires an argument"
+					VALUE="$1" && shift
+					;;
+	-v*)			VALUE="${1:2}" && shift
+					;;
+	--value=*)		VALUE="${1#--value=}" && shift
+					[ ! "$VALUE" ] && errorUsage "--value requires an argument"
+					;;
+	# pass-thru
+	-[0-9])			argv+=("$1") && shift
+					;;
+	# default cases
+	--)				shift && break
+					;;
+	--*)			errorUsage "unknown option: ${1%%=*}"
+					;;
+	-?*)			errorUsage "unknown option: ${1:0:2}"
+					;;
+	*)				argv+=("$1") && shift
+					;;
+	esac
+done
+
+set -- "${argv[@]}" "$@"
+unset argv rest

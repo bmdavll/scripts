@@ -1,0 +1,18 @@
+#!/bin/bash
+# dereference a parameter passed to a function
+
+dereference() {
+	name=\$"$1"
+	echo "$name"
+
+	value=$(eval "expr \"$name\"")
+	echo "$value"
+
+	eval "$1=\"changed\""
+}
+
+foo="original"
+echo -e "\e[34;1mdereference foo\e[0m"
+dereference foo
+echo -e "$foo \e[34;1m(after call)\e[0m"
+

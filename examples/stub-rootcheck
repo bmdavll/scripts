@@ -1,0 +1,12 @@
+#!/bin/bash
+
+rootCheck() {
+	if [ $(id -u) -ne 0 ]; then
+		errorExit "This script must be run as root"
+	fi
+}
+
+if [ $(id -u) -ne 0 ]; then
+	echo >&2 "$(basename "$0"): This script must be run as root"
+	exit 3
+fi

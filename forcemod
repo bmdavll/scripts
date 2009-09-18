@@ -1,0 +1,100 @@
+#!/bin/bash
+
+PROG=$(basename "$0")
+IFS=$'\n'
+
+DIR_PERM=755
+FILE_PERM=644
+
+printUsage() {
+	echo "Usage: $PROG [-d MODE] [-f MODE] [-rR] [-L] FILE..."
+}
+
+errorMsg() {
+	if [ $# -gt 0 ]; then
+		echo >&2 "$PROG: $@"
+	fi
+}
+
+errorExit() {
+	errorMsg "$@"
+	exit 3
+}
+trap "errorExit aborted" 2 3
+trap "errorExit terminated" 1 15
+
+rflag=
+Lflag=
+
+if [ "$1" = "--help" ]; then
+	printUsage
+	exit 0
+fi
+
+while getopts 'hd:f:rRL' option
+do
+	case $option in
+	h)		printUsage
+			exit 0
+			;;
+	d)		DIR_PERM="$OPTARG"
+			;;
+	f)		FILE_PERM="$OPTARG"
+			;;
+	r|R)	rflag=1
+			;;
+	L)		Lflag=-L
+			;;
+	?)		printUsage >&2
+			exit 2
+			;;
+	esac
+done
+shift $((OPTIND - 1))
+
+if [[ "$FILE_PERM"  && ! "$FILE_PERM" =~ ^[0-7]{3}$ ]]; then
+	errorExit "$FILE_PERM: Invalid file permission"
+elif [[ "$DIR_PERM" && ! "$DIR_PERM"  =~ ^[0-7]{3}$ ]]; then
+	errorExit "$DIR_PERM: Invalid directory permission"
+fi
+
+if [ $# -eq 0 ]; then
+	printUsage >&2
+	exit 2
+fi
+
+declare -i code=0
+
+recurse() {
+	find $Lflag "$1" -type d -exec chmod "$DIR_PERM"  {} +
+	[ $? -ne 0 ] && code+=1
+	find $Lflag "$1" -type f -exec chmod "$FILE_PERM" {} +
+	[ $? -ne 0 ] && code+=1
+}
+
+for arg in "$@"
+do
+	if [ -f "$arg" ]; then
+		chmod "$FILE_PERM" "$arg"
+		[ $? -ne 0 ] && code+=1
+	elif [ -d "$arg" ]; then
+		if [ ! "$rflag" ]; then
+			chmod "$DIR_PERM" "$arg"
+			[ $? -ne 0 ] && code+=1
+		else
+			if [ -r "$arg" ]; then
+				recurse "$arg"
+			else
+				errorMsg "$arg: Permission denied"
+				code+=1
+			fi
+		fi
+	else
+		errorMsg "$arg: No such file or directory"
+		code+=1
+	fi
+done
+
+exit $code
+
+# vim:set ts=4 sw=4 noet ft=sh:

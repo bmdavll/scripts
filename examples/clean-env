@@ -1,0 +1,6 @@
+#!/bin/bash
+# clean up the environment (for command wrapper scripts)
+
+unalias -a
+unset -- "$@" &>/dev/null
+enable -n -- "$@" &>/dev/null

@@ -1,0 +1,114 @@
+#!/bin/sh
+
+#########################################################################
+#
+#   Invert hex colors in files and SVG images
+#
+#   2008-04-16  File created
+#   2008-04-22  Changed to an awk-only implementation
+#
+#########################################################################
+
+PROG=`basename "$0"`
+VERSION="0.5"
+
+printUsage() {
+	echo "Usage: $PROG [--help] [-p MARKER] [-xX] FILE..."
+}
+
+helpText() {
+cat << -EOF-
+$PROG $VERSION
+
+Invert hex colors in files and SVG images
+
+Read files on the command line and replace every RGB hex triplet in the form of
+\`#DEADBEEF' (hash followed by six hex digits) with its inverse color. Output to
+stdout.
+
+`printUsage`
+
+Options:
+    -p  MARKER      use MARKER instead of the default '#' to search for hex
+                    sequences (e.g. '0x')
+    -x              output hex digit in lower case (default)
+    -X              output hex digit in upper case
+    -h, --help      display this help message and exit
+
+-EOF-
+}
+
+errorExit() {
+	[ "$1" ] && echo >&2 "$PROG: $1"
+	exit 3
+}
+trap "errorExit aborted" 2 3
+trap "errorExit terminated" 1 15
+
+MARK='#'
+CASE='x'
+
+if [ "$1" = "--help" ]; then
+	helpText
+	exit 0
+fi
+
+while getopts 'hp:xX' option
+do
+	case $option in
+	h)	helpText
+		exit 0
+		;;
+	p)	MARK="$OPTARG"
+		;;
+	x)	CASE='x'
+		;;
+	X)	CASE='X'
+		;;
+	?)	printUsage >&2
+		exit 2
+		;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+if [ $# -eq 0 ]; then
+	printUsage >&2
+	exit 2
+fi
+
+PAT='('"$MARK"'\<|\<'"$MARK"')([[:xdigit:]]{6})\>'
+
+invertColors() {
+	gawk --re-interval '{
+		matches = 0;
+		start = 1;
+		while (match(substr($0, start), /'"$PAT"'/, mat)) {
+			matches += 1;
+			start += RSTART + RLENGTH - 1;
+			inverted = sprintf("%06'"$CASE"'", xor(strtonum("0x"mat[2]), 0xffffff));
+			$0 = gensub(/'"$PAT"'/, "'"$MARK"'"inverted, matches);
+		}
+		print;
+	}' "$1"
+}
+
+code=0
+
+for file in "$@"
+do
+	if [ ! -f "$file" ]; then
+		echo >&2 "$PROG: $file: File not found"
+		code=`expr $code + 1`
+	elif [ ! -r "$file" ]; then
+		echo >&2 "$PROG: $file: Permission denied"
+		code=`expr $code + 1`
+	else
+		invertColors "$file"
+		[ $? -ne 0 ] && errorExit "$file: Processing error"
+	fi
+done
+
+exit $code
+
+# vim:set ts=4 sw=4 noet ft=sh:
