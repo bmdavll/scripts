@@ -53,15 +53,15 @@ if [ $# -eq 0 ]; then
 		date +'%T'
 		sleep 60
 		declare -i elapsed=1
-		echo "$elapsed minute"
+		echo -n "$elapsed minute"
 		while true; do
 			sleep 60
 			elapsed+=1
-			echo "$elapsed minutes"
+			echo -en "\r$elapsed minutes"
 		done
 	fi
 	exit
-elif [[ ! "$1" =~ ^$NUM?:?$NUM:?$NUM?$ ]]; then
+elif [[ ! "$1" =~ ^$NUM?:?$NUM?:?$NUM?$ ]]; then
 	errorUsage
 fi
 
@@ -82,7 +82,7 @@ PARSE='{
 	print int(h * 3600 + m * 60 + s);
 }'
 
-cd "$(dirname "$(readlink -f "$(which "$0")")")" 2>/dev/null || exit
+cd "$(dirname "$(readlink -f "$(which "$0")")")"
 
 declare -i seconds=$(echo "$1" | awk "$PARSE")
 [ $? -ne 0 ] && errorUsage
@@ -92,7 +92,7 @@ if [ "$qflag" ]; then
 	exit
 fi
 
-declare -i remaining=$seconds L=2400 D=1200
+declare -i remaining=$seconds L=1200 D=600
 
 if (( remaining > L )); then
 	stops=($(( remaining % D )))
@@ -108,7 +108,7 @@ else
 	stops=()
 fi
 
-for s in 1800 1200 900 600 300 240 180 120 60 45 30 15 10 5 0; do
+for s in 900 600 300 240 180 120 60 45 30 15 10 5 0; do
 	if (( remaining > s )); then
 		stops+=($(( remaining - s )))
 		remaining=$s
@@ -131,7 +131,7 @@ STATUS='{
 	s = $0 % 60;
 	if (s)
 		printf "%s%s second%s", sep, s, (s > 1 ? "s" : "");
-	print " remaining";
+	printf " remaining";
 }'
 
 declare -i elapsed=0
@@ -141,6 +141,7 @@ echo $seconds | awk "$STATUS" &
 for s in "${stops[@]}"; do
 	sleep $s
 	elapsed+=$s
+	tput el1 && echo -en "\r" &&
 	echo $(( seconds - elapsed )) | awk "$STATUS" &
 done
 
