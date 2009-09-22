@@ -5,6 +5,7 @@
 #   Command-line timer
 #
 #   2009-08-26  File created
+#   2009-09-21  Added -x option
 #
 #########################################################################
 
@@ -12,142 +13,172 @@ PROG=$(basename "$0")
 SOUND="$PROG.mp3"
 
 printUsage() {
-	echo "Usage: $PROG [-q] [H:]M[:S]"
+    echo "Usage: $PROG [-q] [-x CMD] H:M:S"
 }
 errorUsage() {
-	printUsage >&2
-	exit 2
+    printUsage >&2
+    exit 2
 }
 
 if [ "$1" = "--help" ]; then
-	printUsage
-	exit 0
+    printUsage
+    exit 0
 fi
+
 qflag=
-while getopts 'h?q' option
-do
-	case $option in
-	h|\?)	printUsage
-			exit 0
-			;;
-	q)		qflag=1
-			;;
-	?)		errorUsage
-			;;
-	esac
-done
-shift $((OPTIND - 1))
+cmds=()
+
+getOpts() {
+    unset OPTIND
+    while getopts 'h?qx:' option
+    do
+        case $option in
+        h|\?)   printUsage
+                exit 0
+                ;;
+        q)      qflag=1
+                ;;
+        x)      cmds+=("$OPTARG")
+                ;;
+        ?)      errorUsage
+                ;;
+        esac
+    done
+}
+
+getOpts "$@" && shift $((OPTIND - 1))
 
 errorExit() {
-	[ ! "$qflag" ] && echo && date +'%T'
-	echo >&2 "$PROG: $1"
-	exit 1
+    [ ! "$qflag" ] && echo && date +"$DATE"
+    echo >&2 "$PROG: $1"
+    exit 1
 }
-trap "errorExit aborted" 2 3
-trap "errorExit terminated" 1 15
+setTrap() {
+    trap "errorExit aborted" 2 3
+    trap "errorExit terminated" 1 15
+}
 
+DATE='%T'
 NUM='([0-9]+(\.[0-9]*)?)'
 
 if [ $# -eq 0 ]; then
-	if [ ! "$qflag" ]; then
-		date +'%T'
-		sleep 60
-		declare -i elapsed=1
-		echo -n "$elapsed minute"
-		while true; do
-			sleep 60
-			elapsed+=1
-			echo -en "\r$elapsed minutes"
-		done
-	fi
-	exit
+    if [ ! "$qflag" ]; then
+        date +"$DATE"
+        setTrap
+        sleep 60
+        declare -i elapsed=1
+        echo -n "$elapsed minute"
+        while true; do
+            sleep 60
+            elapsed+=1
+            echo -en "\r$elapsed minutes"
+        done
+    fi
+    exit
 elif [[ ! "$1" =~ ^$NUM?:?$NUM?:?$NUM?$ ]]; then
-	errorUsage
+    errorUsage
 fi
 
 PARSE='{
-	h = 0; s = 0;
-	n = split($0, a, ":");
-	if (n == 1) {
-		m = a[1];
-	} else if (n == 2) {
-		m = a[1];
-		s = a[2];
-	} else if (n == 3) {
-		h = a[1];
-		m = a[2];
-		s = a[3];
-	} else
-		exit 1;
-	print int(h * 3600 + m * 60 + s);
+    h = 0; s = 0;
+    n = split($0, a, ":");
+    if (n == 1) {
+        m = a[1];
+    } else if (n == 2) {
+        m = a[1];
+        s = a[2];
+    } else if (n == 3) {
+        h = a[1];
+        m = a[2];
+        s = a[3];
+    } else
+        exit 1;
+    print int(h * 3600 + m * 60 + s);
 }'
 
 cd "$(dirname "$(readlink -f "$(which "$0")")")"
 
 declare -i seconds=$(echo "$1" | awk "$PARSE")
 [ $? -ne 0 ] && errorUsage
+(( seconds >= 24*60*60 )) && DATE='%F'$'\t''%T'
+
+shift
+getOpts "$@" && shift $((OPTIND - 1))
+[ $# -ne 0 ] && errorUsage
 
 if [ "$qflag" ]; then
-	sleep $seconds
-	exit
+    sleep $seconds
+    for expr in "${cmds[@]}"; do
+        eval "$expr"
+    done
+    exit
 fi
 
-declare -i remaining=$seconds L=1200 D=600
+declare -i remaining=$seconds
 
-if (( remaining > L )); then
-	stops=($(( remaining % D )))
-	if (( ${stops[0]} == 0 ))
-	then stops=()
-	else remaining+=-${stops[0]}
-	fi
-	while (( remaining > L )); do
-		stops+=($D)
-		remaining+=-$D
-	done
-else
-	stops=()
-fi
+stops=()
 
-for s in 900 600 300 240 180 120 60 45 30 15 10 5 0; do
-	if (( remaining > s )); then
-		stops+=($(( remaining - s )))
-		remaining=$s
-	fi
-done
+countTo() {
+    local limit=$(($1 * 60)) decr=$2 && shift 2
+    (( remaining <= limit )) && return
+    local mod=$(( remaining % decr ))
+    if (( mod > 0 )); then
+        stops+=($mod)
+        remaining+=-$mod
+    fi
+    while (( remaining > limit )); do
+        stops+=($decr)
+        remaining+=-$decr
+    done
+}     # min sec
+countTo 30  600
+countTo 20  300
+countTo 10  120
+countTo 5   60
+countTo 2   30
+countTo 1   15
+countTo 0   5
 
 STATUS='{
-	if (! $0) exit;
-	h = int($0 / 3600);
-	if (h) {
-		printf "%s hour%s", h, (h > 1 ? "s" : "");
-		sep = " ";
-	}
-	$0 = $0 % 3600;
-	m = int($0 / 60);
-	if (m) {
-		printf "%s%s minute%s", sep, m, (m > 1 ? "s" : "");
-		sep = " ";
-	}
-	s = $0 % 60;
-	if (s)
-		printf "%s%s second%s", sep, s, (s > 1 ? "s" : "");
-	printf " remaining";
+    if (! $0) exit;
+    h = int($0 / 3600);
+    if (h) {
+        printf "%s hour%s", h, (h > 1 ? "s" : "");
+        sep = " ";
+    }
+    $0 = $0 % 3600;
+    m = int($0 / 60);
+    if (m) {
+        printf "%s%s minute%s", sep, m, (m > 1 ? "s" : "");
+        sep = " ";
+    }
+    s = $0 % 60;
+    if (s)
+        printf "%s%s second%s", sep, s, (s > 1 ? "s" : "");
+    printf " remaining";
 }'
 
 declare -i elapsed=0
-date +'%T'
+date +"$DATE"
 echo $seconds | awk "$STATUS" &
+setTrap
 
 for s in "${stops[@]}"; do
-	sleep $s
-	elapsed+=$s
-	tput el1 && echo -en "\r" &&
-	echo $(( seconds - elapsed )) | awk "$STATUS" &
+    sleep $s
+    elapsed+=$s
+    tput el1 && echo -en "\r" &&
+    echo $(( seconds - elapsed )) | awk "$STATUS" &
 done
 
-date +'%T'
-
 qflag=1
-if which mpg123 &>/dev/null && [ -f "$SOUND" ]; then
-	mpg123 "$SOUND" &>/dev/null
+date +"$DATE"
+
+if [ ${#cmds[@]} -gt 0 ]; then
+    for expr in "${cmds[@]}"; do
+        eval "$expr"
+    done
+elif which mpg123 &>/dev/null && [ -f "$SOUND" ]; then
+    mpg123 "$SOUND" &>/dev/null
 fi
+
+# vim:set ts=4 sw=4 et:
