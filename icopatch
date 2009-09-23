@@ -27,60 +27,79 @@ DIM_PAT='\(^\|[[:blank:]]\)%="\([1-9][0-9]*\(\.[0-9]\+\)\?\)\(pt\)\?"'
 WID_PAT=$(echo "$DIM_PAT" | sed 's/%/width/')
 HGT_PAT=$(echo "$DIM_PAT" | sed 's/%/height/')
 
+confirm() {
+	[ "$ALL" ] && return 0
+	echo -n "$1 [y/a/N] " && read
+	if [[ "$REPLY" == [Aa]* ]]; then
+		ALL=1
+	elif [[ "$REPLY" != [Yy]* ]]; then
+		return 1
+	fi
+	return 0
+}
+ALL=
+
+echodo() {
+	echo "$@" && sudo "$@"
+}
+
 for name in "$@"; do
 	svg="$name.svg"
 	png="$name.png"
 
 	if [ ! -f "$svg" -o ! -r "$svg" ]; then
-		echo >&2 "ERROR: $svg not accessible"
+		echo >&2 "$svg: Not found"
 		echo >&2
 		code+=1
-	else
-
-		dir="$THEME/scalable"
-		if [ -d "$dir" ]; then
-			dest=$(find "$dir" -name "$(basename "$svg")")
-			if [ -f "$dest" ]; then
-				echo cp "$svg" "$dest"
-				sudo cp "$svg" "$dest" || code+=1
-			else
-				echo >&2 "WARNING: $(basename "$svg") not found in $dir"
-				code+=1
-			fi
-		fi
-
-		x=$(grep -o "$WID_PAT" "$svg" | head -n 1 | sed 's/'"$WID_PAT"'/\2\4/')
-		y=$(grep -o "$HGT_PAT" "$svg" | head -n 1 | sed 's/'"$HGT_PAT"'/\2\4/')
-		if [ ! "$x" -o ! "$y" ]; then
-			echo >&2 "ERROR: couldn't determine dimensions for $svg"
-			echo >&2
-			code+=1
-			continue
-		fi
-		[[ "$x" == *pt ]] && x="(${x%pt}*1.25)"
-		[[ "$y" == *pt ]] && y="(${y%pt}*1.25)"
-
-		for size in "${SIZES[@]}"; do
-			dir="$THEME/${size}x${size}"
-			[ ! -d "$dir" ] && continue
-			dest=$(find "$dir" -name "$(basename "$png")")
-			if [ -f "$dest" ]; then
-				xzoom=$(echo "scale=15; $size/$x" | bc)
-				yzoom=$(echo "scale=15; $size/$y" | bc)
-				if ! rsvg -x $xzoom -y $yzoom "$svg" "$png"; then
-					code+=1
-					continue
-				fi
-				echo cp "$png" "$dest"
-				sudo cp "$png" "$dest" || code+=1
-				rm "$png"
-			else
-				echo >&2 "WARNING: $(basename "$png") not found in $dir"
-				code+=1
-			fi
-		done
-		echo
+		continue
 	fi
+
+	dir="$THEME/scalable"
+	if [ -d "$dir" ]; then
+		dest=$(find "$dir" -name "$(basename "$svg")")
+		if [ -f "$dest" ]; then
+			echodo cp "$svg" "$dest" || code+=1
+		elif confirm "Copy to $dir/$svg?"; then
+			echodo cp --parents "$svg" "$dir" || code+=1
+		else
+			echo >&2 "$(basename "$svg"): Not found in $dir"
+			code+=1
+		fi
+	fi
+
+	x=$(grep -o "$WID_PAT" "$svg" | head -n 1 | sed 's/'"$WID_PAT"'/\2\4/')
+	y=$(grep -o "$HGT_PAT" "$svg" | head -n 1 | sed 's/'"$HGT_PAT"'/\2\4/')
+	if [ ! "$x" -o ! "$y" ]; then
+		echo >&2 "$svg: Couldn't get dimensions"
+		echo >&2
+		code+=1
+		continue
+	fi
+	[[ "$x" == *pt ]] && x="(${x%pt}*1.25)"
+	[[ "$y" == *pt ]] && y="(${y%pt}*1.25)"
+
+	for size in "${SIZES[@]}"; do
+		dir="$THEME/${size}x${size}"
+		[ ! -d "$dir" ] && continue
+		dest=$(find "$dir" -name "$(basename "$png")")
+		if [ -f "$dest" ] || confirm "Create $dir/$png?"; then
+			xzoom=$(echo "scale=15; $size/$x" | bc)
+			yzoom=$(echo "scale=15; $size/$y" | bc)
+			if ! rsvg -x $xzoom -y $yzoom "$svg" "$png"; then
+				code+=1
+				continue
+			fi
+			if [ -f "$dest" ]
+			then echodo cp "$png" "$dest" || code+=1
+			else echodo cp --parents "$png" "$dir" || code+=1
+			fi
+			rm "$png"
+		else
+			echo >&2 "$(basename "$png"): Not found in $dir"
+			code+=1
+		fi
+	done
+	echo
 done
 
 exit $code
