@@ -65,6 +65,7 @@ errorUsage() {
 		echo >&2
 		errorMsg "$@"
 	fi
+    # [ $# -gt 0 ] && echo >&2 $'\n'"$PROG: $@"
 	exit 2
 }
 
@@ -127,15 +128,25 @@ if [ "$1" = "--help" ]; then
 	exit 0
 fi
 
-while getopts 'ha:b' option
+while getopts ':ha:b' option
 do
-	case $option in
+	case "$option" in
 	h)		helpText
 			exit 0
 			;;
 	a)		echo "$OPTARG"
 			;;
 	b)		bflag=1
+			;;
+	:)		errorUsage "Option $OPTARG requires an argument"
+			;;
+	?)		case "$OPTARG" in
+			\?) printUsage
+				exit 0
+				;;
+			*)  errorUsage "Illegal option" "$OPTARG"
+				;;
+			esac
 			;;
 	?)		printUsage >&2
 			exit 2
