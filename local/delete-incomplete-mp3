@@ -18,8 +18,7 @@ if type mp3info &>/dev/null; then
 	do
 		if [ "$(mp3info -p '%S' "$file")" -lt $LEN_LIM ]; then
 			echo "$file"
-			rm "$file"
-			[ $? -ne 0 ] && code+=1
+			rm "$file" || code+=1
 		fi
 	done
 else

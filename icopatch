@@ -7,19 +7,20 @@ PRE="/usr/share/icons"
 SIZES=(256 192 128 96 72 64 48 36 32 24 22 16)
 
 if [ $# -lt 2 -o -z "$1" ]; then
-	echo >&2 "Usage: $(basename "$0") [$PRE/]THEME SVG..."
+	echo >&2 "Usage: $(basename "$0") THEME SVG..."
 	exit 2
-elif [ -d "$1" -a -f "$1/index.theme" ]; then
+fi
+
+[[ "$1" != /* ]] && set -- "$PRE/$1" "${@:2}"
+
+if [ -d "$1" -a -f "$1/index.theme" ]; then
 	THEME="${1%/}" && shift
-elif [ -d "$PRE/$1" -a -f "$PRE/$1/index.theme" ]; then
-	THEME="$PRE/${1%/}" && shift
 else
 	echo >&2 "$1: Theme not found"
 	exit 1
 fi
 
 set -- "${@%.svg}"
-sudo echo -n || exit
 
 declare -i code=0
 
@@ -40,7 +41,7 @@ confirm() {
 ALL=
 
 echodo() {
-	echo "$@" && sudo "$@"
+	echo "$@" && "$@"
 }
 
 for name in "$@"; do
@@ -99,7 +100,6 @@ for name in "$@"; do
 			code+=1
 		fi
 	done
-	echo
 done
 
 exit $code

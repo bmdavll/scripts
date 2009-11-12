@@ -6,7 +6,7 @@ IFS=$'\n'
 PRE="/usr/share/icons"
 
 # subdirectories in which to look for icons
-PATHS=('apps' 'extras')
+PATHS=('apps' 'extras' 'actions' 'status' 'stock/*' 'emblems')
 
 # possible png icon sizes
 SIZES=(256 192 128 96 72 64 48 36 32 24 22 16)
@@ -19,7 +19,7 @@ SIZES=(256 192 128 96 72 64 48 36 32 24 22 16)
 #	...
 #	sudo MAP="$(declare -p pixmaps)" icolinkify GartoonRedux /usr/share/pixmaps
 if [[ "$MAP" =~ ^'declare -A '([[:alnum:]]+)=.+$ ]]; then
-	eval "$MAP"
+	eval "$MAP" || exit
 	MAP="${BASH_REMATCH[1]}"
 	if [[ "$(declare -p "$MAP" 2>/dev/null)" != "declare -A"* ]]; then
 		MAP=
@@ -31,8 +31,12 @@ fi
 if [ $# -eq 0 -o -z "$1" ]; then
 	echo >&2 "Usage: $(basename "$0") THEME [PATH]..."
 	exit 2
-elif [ -d "$PRE/$1" -a -f "$PRE/$1/index.theme" ]; then
-	THEME="$PRE/${1%/}" && shift
+fi
+
+[[ "$1" != /* ]] && set -- "$PRE/$1" "${@:2}"
+
+if [ -d "$1" -a -f "$1/index.theme" ]; then
+	THEME="${1%/}" && shift
 else
 	echo >&2 "$1: Theme not found"
 	exit 1
@@ -75,6 +79,10 @@ ping() {
 }
 search() {
 	local dir size="$1" file="$2" && shift 2
+	local path=$(echo "$file" | egrep -o '(scalable|([1-9][0-9]+)x\2)/.*')
+	if [ "$path" ]; then
+		link "$THEME/$path" "$file" && return 0
+	fi
 	if [ "$MAP" ]; then
 		local base=$(basename -- "$file") target
 		target=$(eval 'echo "${'"$MAP[${base%.*}]"'}"' 2>/dev/null)
@@ -83,7 +91,9 @@ search() {
 		fi
 	fi
 	for dir in "${PATHS[@]}"; do
-		link "$THEME/$size/$dir/$(basename -- "$file")" "$file" && return 0
+		for path in "$THEME/$size/"$dir; do
+			link "$path/$(basename -- "$file")" "$file" && return 0
+		done
 	done
 	return 1
 }
