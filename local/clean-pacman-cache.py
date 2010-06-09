@@ -3,30 +3,50 @@
 import os, re, sys
 from glob import glob
 from collections import defaultdict
+from subprocess import Popen, PIPE
 
-re_suffix = re.compile(r'-[^-]+-[\d.]+(-i686)?\.pkg\.tar\.gz$')
-
-count = defaultdict(lambda: 0)
-
-os.chdir('/var/cache/pacman/pkg')
-
-for pkg in glob('*'):
-    count[re_suffix.sub('', pkg)] += 1
+re_suffix = re.compile(r'-[^-]+-[^-]+(-(?:i686|x86_64|any))?\.pkg\.tar\.\w+$')
 
 keep = 3
 
 if len(sys.argv) == 2 and re.match(r'^[1-9][0-9]*$', sys.argv[1]):
     keep = int(sys.argv[1])
 
+packages = defaultdict(lambda:[])
+
 try:
-    for key in count:
-        if count[key] > keep:
-            if key.startswith('kernel') and count[key] <= keep+2:
-                continue
-            extra = filter( lambda s: re_suffix.sub('', s) == key,
-                            glob(key + '-*') )
-            for file in sorted(extra)[ : -keep]:
+    output = Popen(['pacman', '-Qq'], stdout=PIPE).communicate()[0]
+    installed = set(output.decode().split())
+
+    os.chdir('/var/cache/pacman/pkg')
+
+    files = glob('*')
+    files.sort()
+
+    for file in files:
+        packages[ re_suffix.sub('', file) ].append(file)
+
+    for pkg in packages:
+
+        if pkg not in installed:
+            for file in packages[pkg]:
                 os.remove(file)
-                print(file)
+                print(file, '[not installed]')
+
+        elif pkg.startswith('kernel'):
+            if len(packages[pkg]) > keep+2:
+                for file in packages[pkg][ : -(keep+2) ]:
+                    os.remove(file)
+                    print(file, '[kernel > '+str(keep+2)+']')
+        else:
+            if len(packages[pkg]) > keep:
+                for file in packages[pkg][ : -keep ]:
+                    os.remove(file)
+                    print(file, '[> '+str(keep)+']')
+
 except OSError as e:
-    print(e.strerror, e.filename, sep=': ', file=sys.stderr)
+    if e.filename:
+        print(e.strerror, e.filename, sep=': ', file=sys.stderr)
+    else:
+        print(e.strerror, file=sys.stderr)
+
