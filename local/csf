@@ -1,0 +1,38 @@
+#!/bin/bash
+
+SEMESTER="sp09"
+
+case "$1" in
+164)	LOGIN="cs164-cp"
+		DIR="cc/cs$1/$SEMESTER/class/$LOGIN"
+		;;
+wdl)	LOGIN="wdl"
+		DIR="aa/users/wdl"
+		;;
+ctest)	LOGIN="cs164-cp"
+		DIR="ff/ctest"
+		;;
+*)		LOGIN=
+		;;
+esac
+shift
+
+if [ "$LOGIN" ]; then
+	MNT="$HOME/tmp/$LOGIN"
+
+	if [ ! -d "$MNT" ]; then
+		mkdir -p "$MNT"
+	fi
+
+	SERVER="cory"
+
+	if [ -n "$1" ]; then
+		SERVER="$1"
+	fi
+
+	sshfs "$LOGIN@$SERVER.eecs.berkeley.edu:/home/$DIR" "$MNT"
+
+	[ $? -eq 0 ] && cd "$MNT"
+else
+	false
+fi

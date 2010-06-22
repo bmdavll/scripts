@@ -1,0 +1,19 @@
+#!/bin/bash
+
+case "$1" in
+164)	LOGIN="cs164-cp"
+		;;
+wdl)	LOGIN="wdl"
+		;;
+*)		exit 2
+		;;
+esac
+shift
+
+SERVER="cory"
+
+if [ -n "$1" ]; then
+	SERVER="$1"
+fi
+
+ssh -X "$LOGIN@$SERVER.eecs.berkeley.edu"

@@ -1,0 +1,7 @@
+#!/bin/bash
+
+if xmodmap -pke | grep '\<22\>' | grep BackSpace &>/dev/null; then
+	xmodmap -e 'keycode 22 ='
+else
+	xmodmap -e 'keycode 22 = BackSpace'
+fi

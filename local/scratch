@@ -1,0 +1,137 @@
+#!/bin/bash
+# snippets of bash
+
+PROG=$(basename "$0")
+
+cleanUp() {
+	rm -f "$TEMPFILE"
+}
+
+errorExit() {
+	[ "$1" ] && echo >&2 "$PROG: $1"
+	cleanUp
+	exit 3
+}
+trap "errorExit aborted" 2 3
+trap "errorExit terminated" 1 15
+
+makeTemp() {
+	local TEMPDIR
+	if [ -d "$HOME/tmp" ]
+	then TEMPDIR="$HOME/tmp"
+	else TEMPDIR=/tmp
+	fi
+	TEMPFILE=$(mktemp -q -p "$TEMPDIR" "$PROG.$$.XXXX")
+	if [ $? -ne 0 ]; then
+		errorExit "Could not create temp file"
+	fi
+}
+TEMPFILE=
+
+### file test
+ftest() {
+	if [ ! -f "$1" ]; then
+		return 1
+	elif [ ! -r "$1" -o ! -w "$1" ]; then
+		return 1
+	elif ! file -b "$1" | grep -iq "\<text\>"; then
+		return 1
+	else
+		return 0
+	fi
+}
+
+### positional parameters info
+args() {
+	local count=0
+	echoc blue -n "\$#: "; echo "$#"
+	for i in "$@"; do
+		echoc blue -n "\$$((++count)): \`"; echo -n "${i}"; echoc blue "'"
+	done
+}
+
+### from /etc/bash_completion
+function get_cword
+{
+	if [ "${#COMP_WORDS[COMP_CWORD]}" -eq 0 ] || \
+		[ "$COMP_POINT" = "${#COMP_LINE}" ]; then
+		echo "${COMP_WORDS[COMP_CWORD]}"
+	else
+		local cur="$COMP_LINE" index="$COMP_POINT" i
+		for (( i = 0; i <= COMP_CWORD; ++i )); do
+			while [ "${#cur}" -ge ${#COMP_WORDS[i]} ] && \
+				[ "${cur:0:${#COMP_WORDS[i]}}" != "${COMP_WORDS[i]}" ]
+			do
+				cur="${cur:1}"
+				index="$(( index - 1 ))"
+			done
+			if [ "$i" -lt "$COMP_CWORD" ]; then
+				local len="${#cur}"
+				cur="${cur#${COMP_WORDS[i]}}"
+				index="$(( index - len + ${#cur} ))"
+			fi
+		done
+		echo "${cur:0:$index}"
+	fi
+}
+
+################ BEGIN ################
+
+### convert epoch time
+makeTemp
+for file in "$@"
+do
+	if ! ftest "$file"; then continue; fi
+	awk --re-interval '
+	BEGIN {
+		count = 0;
+		i = 0;
+	}
+	pass==1 {
+		while ( match($0, /(\["time"\] = )([0-9]+)/, a) ) {
+			count++;
+			l[count] = a[2];
+			sub(/(\["time"\] = )([0-9]+)/, "");
+		}
+	}
+	pass==2 {
+		matches = gsub(/(\["time"\] = )([0-9]+)/, "&");
+		for ( m = 1; m <= matches; m++ ) {
+			i++;
+			date = strftime("%m/%d %H:%M", l[i]);
+			$0 = gensub(/(\["time"\] = )([0-9]+)/, "\\1"date, m);
+		}
+		print;
+	}' pass=1 "$file" pass=2 "$file" >$TEMPFILE
+	cp $TEMPFILE "$file"
+done
+cleanUp
+exit
+
+### IFS and read
+echoc yellow 'Normal $IFS'
+while read line
+do
+	echoc red 'Unquoted'
+	args $line
+	echoc green 'Quoted'
+	args "$line"
+done << -EOF-
+    a line with	tabs	...
+-EOF-
+
+IFS=$'\n'
+echoc yellow "IFS=\$'\\n'"
+while read line
+do
+	echoc red 'Unquoted'
+	args $line
+	echoc green 'Quoted'
+	args "$line"
+done << -EOF-
+    a line with	tabs	...
+-EOF-
+
+exit
+
+# vim:set ts=4 sw=4 noet:

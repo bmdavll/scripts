@@ -1,0 +1,93 @@
+#!/bin/sh
+
+GCC=/usr/bin/gcc
+PYTHON=/usr/bin/python
+
+CONTEST=`find $HOME/class -type d -name cs199`
+ARCH=i86pc
+
+pythonOK=${PYTHONOK:-no}
+
+if [ "`uname`" = "SunOS" ]; then
+    DEBUG=-gstabs
+else
+    DEBUG=-g
+fi
+
+if [ "`uname -m`" = "sun4u" ]; then
+    OPT="-O3 -mv8"
+else
+    OPT="-O3"
+fi
+
+if [ -z "${CONTEST}" ]; then
+    echo "Improper configuration: environment variable CONTEST not defined"
+    echo "compile FAILS"
+    exit 2
+fi
+
+if [ $# -ne 1 ]; then
+    echo "Usage: contest-gcc problem-number"
+    exit 1
+fi
+
+java=
+python=
+object="`echo $1 | sed -e 's/\.[cC].*//' -e 's/\.java//' `"
+if [ -f ${object}.c ]; then
+    srcFile=${object}.c
+elif [ -f ${object}.C ]; then
+    srcFile=${object}.C
+elif [ -f ${object}.cc ]; then
+    srcFile=${object}.cc
+elif [ -f ${object}.java ]; then
+    srcFile=${object}.java
+    java=1
+elif [ -n "$pythonOK" -a -f ${object}.py ]; then
+    srcFile=${object}.py
+    python=1
+else
+    if [ -n "$pythonOK" ]; then
+	echo "Error: neither ${object}.c, ${object}.C, ${object}.cc, ${object}.java, nor ${object}.py exists."
+    else
+	echo "Error: neither ${object}.c, ${object}.C, ${object}.cc, nor ${object}.java exists."
+    fi
+    exit 1
+fi
+
+INCLUDE_LIB=${CONTEST}/include
+LIB=${CONTEST}/lib/${ARCH}
+
+/bin/rm -f ${object}
+
+if [ "$java" ]; then
+  echo javac -g ${object}.java
+  javac -g ${object}.java
+  code=$?
+  if [ $code -ne 0 ]; then
+      exit $code
+  fi
+  class=`echo $object | sed 's/-.*//'`
+  echo "Creating executable file ${object} to run P${class}.main ..."
+  rm -f ${object}
+  cat > ${object} <<EOF
+#!/bin/sh
+
+exec java P${class}
+EOF
+  chmod 700 ${object} && {
+    echo "Done.  To run program, type ./${object}"
+    exit 0
+  }
+  exit 1
+elif [ "$python" ]; then
+  echo "#!$PYTHON" | cat - $srcFile | sed '/\/\*/d' >${object}
+  chmod 700 ${object} && {
+    echo "Done.  To run program, type ./${object}"
+    exit 0
+  }
+  exit 1
+else
+  echo ${GCC} -Wall ${DEBUG} ${OPT} -o ${object} -I${INCLUDE_LIB} -L${LIB} ${srcFile} -lstdc++ -lm -lcontest
+  ${GCC} -Wall ${DEBUG} ${OPT} -o ${object} -I${INCLUDE_LIB} -L${LIB} ${srcFile} -lstdc++ -lm -lcontest
+fi

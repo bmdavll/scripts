@@ -1,0 +1,28 @@
+#!/bin/bash
+
+DIR=$HOME/tmp/Vim
+
+set -e
+
+clean() {
+	rm -rf $DIR/_*vimrc $DIR/vimfiles
+}
+
+mkdir -p $DIR
+
+clean
+
+cp -La	$HOME/.gvimrc	$DIR/_gvimrc
+cp -La	$HOME/.vimrc	$DIR/_vimrc
+cp -La	$HOME/.vim		$DIR/vimfiles
+
+ZIP=$(basename $DIR).zip
+cd $DIR
+zip -r $ZIP * >/dev/null
+mv $ZIP $HOME
+
+clean
+
+if [ ! "$(ls -A $DIR)" ]; then
+	rmdir $DIR
+fi

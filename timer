@@ -5,6 +5,7 @@
 #   2009-08-26  File created
 #   2009-09-21  Added -x option
 #   2009-09-24  Added -d option
+#   2010-06-20  Show exact ammount of time elapsed/remaining on signals
 #########################################################################
 
 PROG=$(basename "$0")
@@ -13,7 +14,7 @@ ALARM="$PROG.mp3"
 PLAYER=mpg123
 
 printUsage() {
-    echo "Usage: $PROG [-q] [ H:M:S | -d STRING ] [-x CMD]..."
+    echo "Usage: $PROG [-q] [ H:M:S | -d UNTIL ] [-x CMD]..."
 }
 errorUsage() {
     printUsage >&2
@@ -105,38 +106,42 @@ STATUS='{
 DATE='%T'
 
 abortTimer() {
-    [ ! "$qflag" ] && echo && date +"$DATE"
+    tput el1 && echo -n $'\r' &&
+    echo $(stty -a | grep "intr" | awk -v RS=';' '$1 == "intr" {print $3}')
+    if [ ! "$qflag" ]; then
+        date +"$DATE"
+        elapsed=$(( $(date +'%s') - start ))
+        echo $(( $1 )) | awk -v MSG=" $2\n" "$STATUS"
+    fi
     exit 1
 }
-setTrap() {
-    trap "abortTimer" 1 2 3 15
-}
+TRAPS="HUP INT QUIT ABRT TERM"
 
-declare -i seconds elapsed=0
+declare -i start seconds elapsed=0
 
-if [ $# -eq 0 -o -n "$string" ]; then
-    if [ -z "$string" ]; then
-        if [ ! "$qflag" ]; then
-            date +"$DATE"
-            setTrap
-            while true; do
-                sleep 60
-                elapsed+=60
-                tput el1 && echo -n $'\r' &&
-                echo $elapsed | awk "$STATUS" &
-            done
-        fi
-        exit
+if [ $# -eq 0 -a -z "$string" ]; then
+    if [ ! "$qflag" ]; then
+        start=$(date +'%s')
+        date +"$DATE"
+        trap "abortTimer elapsed elapsed" $TRAPS
+        while true; do
+            sleep 60
+            elapsed+=60
+            tput el1 && echo -n $'\r' && echo $elapsed | awk "$STATUS" &
+        done
     fi
+    exit
+fi
+
+if [ $# -eq 0 ]; then
     seconds=$(( $(date +'%s' -d "$string") - $(date +'%s') ))
     (( seconds < 0 )) && exit 1
-    string=
+    unset string
 else
     seconds=$(echo "$1" | awk "$PARSE")
     [ $? -ne 0 ] && errorUsage
     shift
 fi
-
 (( seconds >= 24*60*60 )) && DATE='%F'$'\t''%T'
 
 getOpts "$@" && shift $((OPTIND - 1))
@@ -153,29 +158,32 @@ fi
 declare -i remaining=$seconds
 stops=()
 
-countTo() {
-    local limit=$(($1 * 60)) decr=$2 && shift 2
-    (( remaining <= limit )) && return
-    local mod=$(( remaining % decr ))
-    if (( mod > 0 )); then
-        stops+=($mod)
-        remaining+=-$mod
-    fi
-    while (( remaining > limit )); do
-        stops+=($decr)
-        remaining+=-$decr
-    done
-}   #   min sec
-countTo 30  600
-countTo 20  300
-countTo 10  120
-countTo 5   60
-countTo 2   30
-countTo 1   15
-countTo 0   5
+    countTo() {
+        local limit=$(($1 * 60)) decr=$2 && shift 2
+        (( remaining <= limit )) && return
+        local mod=$(( remaining % decr ))
+        if (( mod > 0 )); then
+            stops+=($mod)
+            remaining+=-$mod
+        fi
+        while (( remaining > limit )); do
+            stops+=($decr)
+            remaining+=-$decr
+        done
+    }   #   min sec
+    countTo 30  600
+    countTo 20  300
+    countTo 10  120
+    countTo 5   60
+    countTo 2   30
+    countTo 1   15
+    countTo 0   5
 
+unset remaining
+
+start=$(date +'%s')
 date +"$DATE"
-setTrap
+trap "abortTimer seconds-elapsed remaining" $TRAPS
 
 for s in "${stops[@]}"; do
     echo $(( seconds - elapsed )) | awk -v MSG=' remaining' "$STATUS" &
@@ -184,10 +192,10 @@ for s in "${stops[@]}"; do
     tput el1 && echo -n $'\r' &
 done
 
+ALARM="$(dirname "$(readlink -f "$(which "$0")")")/$ALARM"
+
 qflag=1
 date +"$DATE"
-
-ALARM="$(dirname "$(readlink -f "$(which "$0")")")/$ALARM"
 
 if [ ${#cmds[@]} -gt 0 ]; then
     for expr in "${cmds[@]}"; do

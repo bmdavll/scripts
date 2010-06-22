@@ -1,0 +1,37 @@
+#!/bin/bash
+
+if [ $# -ne 2 ]; then
+    zenity --error --title="Binary Diff" --text="Two files required ($# given)"
+    exit 2
+fi
+
+IFS=$'\n'
+
+fileInfo() {
+    ls -dlk --time-style=long-iso "$@" | awk --re-interval '{
+        print $5;
+        print $6, $7;
+        sub(/^([^[:space:]]+[[:space:]]+){7}/, "");
+        path = $0;
+        sub(/^.*\//, "");
+        print;
+        system("file -b "path);
+    }'
+}
+
+if ! cmp -s "$@"; then
+    zenity --list --title="Binary Diff" \
+           --text="The files are different:" \
+           --width=700 \
+           --column=Size \
+           --column=Modified \
+           --column=Name \
+           --column=Type \
+           $(fileInfo "$@")
+    exit 1
+else
+    zenity --info --title="Binary Diff" --text="The files are the same."
+    exit 0
+fi
+
+# vim:set ts=4 sw=4 et:

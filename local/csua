@@ -1,0 +1,18 @@
+#!/bin/bash
+
+LOGIN="wdl"
+SERVER="soda"
+
+if [ "$1" != "-f" ]; then
+	ssh -X "$LOGIN@$SERVER.csua.berkeley.edu"
+
+else
+	MNT="$HOME/tmp/$SERVER"
+
+	if [ ! -d "$MNT" ]; then
+		mkdir -p "$MNT"
+	fi
+
+	sshfs "$LOGIN@$SERVER.csua.berkeley.edu" "$MNT"
+	[ $? -eq 0 ] && cd "$MNT"
+fi

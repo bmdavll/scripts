@@ -1,0 +1,10 @@
+#!/bin/bash
+
+rm -f  $HOME/.config/menus/applications-merged/wine*
+rm -f  $HOME/.local/share/desktop-directories/wine*
+rm -rf $HOME/.local/share/applications/wine
+rm -rf $HOME/.wine
+
+type f &>/dev/null && f $HOME/.local/share/icons
+
+exit 0

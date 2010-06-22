@@ -1,0 +1,474 @@
+#!/bin/bash
+
+########################################################################
+#
+#   Create tar archives according to definition files
+#
+#   Copyright 2008, David Liang <bmdavll@gmail.com>
+#
+#   This program is free software; you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 2 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   Revisions:
+#   04/12/2008  Added documentation (use --help)
+#   05/07/2008  Added option to overwrite files
+#   03/26/2009  Functionality for dereferencing links
+#
+########################################################################
+
+PROGNAME=$(basename "$0")
+VERSION="0.8"
+
+# default parameters
+DEFINITION_EXT=".def"
+COPY='@'
+
+TAR=(tar)
+TAR_EXT=".tar"
+COMPRESS=()
+
+printUsage() {
+	echo "Usage: ${PROGNAME} [--help] [-t DIR] [ -d FORMAT | -D FORMAT ] [-Lefv]"
+	echo "                       [-zjn] DEFINITION..."
+}
+
+helpText() {
+cat << -EOF-
+${PROGNAME} ${VERSION}
+
+Create tar archives according to definition files specified on the command line
+and optionally compress them. Each definition will create a single archive in
+the target directory (provided by the -t option; defaults to the current
+directory). The archive will take the name of its definition file, minus the
+conventional suffix ($DEFINITION_EXT), and with the tar extension ($TAR_EXT) appended.
+Each line of a definition file is a bash extended globbing pattern that
+describes one or more files or directories to be added to the tar file in
+place. However, if any of the file descriptors is prefixed with the "copy"
+character ('$COPY'), a temporary directory will be created in the target
+directory, to which all matching files will be copied first. After reading the
+entire definition file, the temporary directory will be added to the tar file
+and then removed. Comments in the definition file begin with a "#" and are
+ignored. If the first line of the file is a comment, the temporary directory
+(if needed) will be named according to the first word in the comment; otherwise
+it will take the name of the definition file. Directory structure is preserved
+starting with the first directory to contain a pathname expansion (globbing)
+pattern. So for example the definition file
+
+    # dotfiles, settings, and themes
+    ! ~/.bashrc
+    ! ~/.[c]mus/rc
+    ~/Desktop/config
+
+will create a tar file with the structure
+
+    dotfiles/.bashrc
+    dotfiles/.cmus/rc
+    config
+
+By default, only tilde expansion is performed on a file descriptor. To include
+a '#' in the pattern, escape it with a backslash or have it inside a double-
+quoted section. To include a '"' in the pattern, escape it with a backslash.
+The pathname expansion pattern is otherwise literal (see the \`-e' option for
+the alternative).
+
+
+$(printUsage)
+
+Options:
+    -t  DIR         create archives in DIR instead of the current directory
+    -d  FORMAT      append a formatted string to be interpretted by \`date' in
+                    front of each archive name
+    -D  FORMAT      same as -d, but after the archive name
+    -L              if a symbolic link is specified by the definition file, try
+                    to dereference (follow) it
+    -e              each file descriptor is \`eval'ed first, allowing the use
+                    of variables, command substitution, arithmetic expansion,
+                    etc. in addition to tilde expansion (note that characters
+                    such as parentheses and whitespace in the file descriptor
+                    now need to be escaped or quoted)
+    -f              overwrite existing files without confirmation
+    -v              verbose (print the list of files added to the archive)
+    -z              compress with gzip
+    -j              compress with bzip2
+    -n              no compression (default)
+    -h, --help      display this help message and exit
+
+Example:
+    ${PROGNAME} -t ~/backup -d "%Y%m%d-" -fvz *${DEFINITION_EXT}
+
+-EOF-
+}
+
+DEBUGGING=
+
+debug() {
+	if test "$DEBUGGING"; then
+		echo "$@" >&2
+	fi
+}
+
+printError() {
+	echo "${PROGNAME}: $1" >&2
+}
+
+cleanUp() {
+	if [ "$archive" ]; then
+		rm -f "$TARGET_DIR/$archive"
+	fi
+	if [ "$tempdir_init" = "yes" ]; then
+		rm -rf "$TARGET_DIR/$tempdir"
+	fi
+}
+
+errorExit() {
+	printError "${1:-Error}"
+	cleanUp
+	exit 3
+}
+trap "errorExit Aborted" 2 3
+trap "errorExit Terminated" 1 15
+
+confirmRemove() {
+	[ "$fflag" ] && return 0
+	echo -n "${PROGNAME}: \`$1' already exists; do you wish to remove it? [y/N] "
+	read
+	if [[ "$REPLY" =~ ^[Yy] ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+compressTar() {
+	[ -z "$COMPRESS" ] && return 0
+	echo "$1: Compressing with \`${COMPRESS[@]}'"
+	${COMPRESS[@]} "$1" 2>&1
+}
+
+# initialization
+shopt -s dotglob
+shopt -s extglob
+
+IFS=$'\n'
+RUNDIR="$PWD"
+TARGET_DIR="$RUNDIR"
+
+archive=
+tempdir=
+tempdir_init=
+format=
+dflag=
+Dflag=
+Lflag=
+eflag=
+fflag=
+vflag=
+nflag=
+
+# options
+if [ "$1" = "--help" ]; then
+	helpText
+	exit 0
+fi
+
+while getopts 'ht:d:D:Lefvzjn' option
+do
+	case $option in
+		h)  helpText
+		    exit 0
+		    ;;
+		t)  TARGET_DIR="$OPTARG"
+		    ;;
+		d)  dflag=1
+		    format="$OPTARG"
+		    ;;
+		D)  Dflag=1
+		    format="$OPTARG"
+		    ;;
+		L)  Lflag=1
+		    ;;
+		e)  eflag=1
+		    ;;
+		f)  fflag=1
+		    ;;
+		v)  vflag=1
+		    ;;
+		z)  COMPRESS=(gzip)
+		    ;;
+		j)  COMPRESS=(bzip2)
+		    ;;
+		n)  nflag=1
+		    ;;
+		?)  printUsage >&2
+		    exit 2
+		    ;;
+	esac
+done
+shift $((OPTIND - 1))
+
+if [ $# -eq 0 ]; then
+	printUsage >&2
+	exit 2
+fi
+
+# main
+exitcode=0
+
+# parameter processing
+[ -z "$TARGET_DIR" ] && TARGET_DIR="$RUNDIR"
+[ -z "$DEFINITION_EXT" ] && DEFINITION_EXT=".def"
+[ -z "$TAR" ] && TAR=(tar)
+[ -z "$TAR_EXT" ] && TAR_EXT=".tar"
+
+if [ -d "$TARGET_DIR" ]; then
+	TARGET_DIR=$(cd "$TARGET_DIR" 2> /dev/null && pwd)
+	if [ $? -ne 0 -o ! -w "$TARGET_DIR" ]; then
+		errorExit "Permission denied for target directory \`$TARGET_DIR'"
+	fi
+else
+	errorExit "Can't access target directory \`$TARGET_DIR'"
+fi
+
+[ "$nflag" ] && COMPRESS=()
+if [ "$fflag" -a -n "$COMPRESS" ]; then
+	COMPRESS+=("-f")
+fi
+if [ "$vflag" -a -n "$COMPRESS" ]; then
+	COMPRESS+=("-v")
+fi
+
+# echo "Creating archives in \`$TARGET_DIR'"
+
+processLine() {
+	local line="$1" dir base copy=
+
+	if [[ "$line" =~ ^[[:blank:]]*$COPY ]]; then
+		copy=1
+	fi
+
+	# strip $COPY, leading whitespace, comments, and trailing whitespace
+	line=$( echo "$line" | \
+			sed	-e "s/^[[:blank:]]*\($COPY\)*[[:blank:]]*//" \
+				-e 's/^\(\([^"#\]\+\|\\.\|"\([^"]\+\|\\"\)*"\)*\)#.*$/\1/' \
+				-e 's/[[:blank:]]\+$//' )
+
+	if [ "$eflag" ]; then
+		eval line="$line" 2> /dev/null
+		if [ $? -ne 0 ]; then
+			printError "Bad file descriptor \`$line'"
+			return 1
+		fi
+	else
+		# tilde expansion
+		if [[ "$line" =~ ^~ ]]; then
+			dir="${line%%/*}"
+			line="${line#$dir}"
+			eval dir="$dir" 2> /dev/null
+			line="${dir}${line}"
+		fi
+		# convert quoted file descriptors and escaped '"' and '#' characters
+		line=$( echo "$line" | \
+				sed	-e 's/\(^\|[^"\]\)"\(\([^"]\+\|\\"\)*\)"/\1\2/g' \
+					-e 's/\\"/"/g' \
+					-e 's/\\#/#/g' )
+	fi
+
+	[ -z "$line" ] && return 0
+
+	# descriptor names one or more existing files/directories?
+	if ! ls -d $line &> /dev/null; then
+		printError "WARNING: No matches for \`$line'"
+		return 1
+	fi
+
+	# define directory and file paths
+	if [ "$(ls -d $line)" != "$(ls -d "$line" 2> /dev/null)" ]; then
+		# set $dir to the non-globbing part of the file descriptor
+		dir=$(echo "$line" | sed 's#[^/]*\([*?]\|\[[^!^/][^/]*\]\|\[[!^][^/]\+\]\|[*?+@!]([^/]\+)\).*##')
+		base="${line#$dir}"
+		[ -z "$dir" ] && dir="."
+		dir="${dir%/}"
+	else
+		dir=$(dirname "$line")
+		base=$(basename "$line")
+	fi
+
+	# change to containing directory
+	if ! cd "$dir"; then
+		printError "WARNING: Permission denied for \`$dir'"
+		return 1
+	fi
+
+	set $base
+	local file returncode=0
+
+	if [ "$Lflag" ]; then
+		for file in "$@"; do
+			processFiles "$copy" "$file"
+			[ $? -ne 0 ] && returncode=1
+		done
+	else
+		processFiles "$copy" "$@"
+		[ $? -ne 0 ] && returncode=1
+	fi
+
+	cd "$RUNDIR"
+	return $returncode
+} # processLine
+
+checkTempdir() {
+	if [ "$tempdir_init" = "yes" ]; then
+		return 0
+	elif [ "$tempdir_init" = "err" ]; then
+		return 1
+	fi
+	if [ -e "$TARGET_DIR/$tempdir" ]; then
+		confirmRemove "$TARGET_DIR/$tempdir" && rm -r "$TARGET_DIR/$tempdir"
+		[ $? -ne 0 ] && tempdir_init=err && return 1
+	fi
+	mkdir "$TARGET_DIR/$tempdir" && tempdir_init=yes && return 0
+}
+
+processFiles() {
+	local copy="$1" && shift
+
+	# if line starts with $COPY, copy to temp directory, to be packed when
+	# finished reading current definition file
+	if [ "$copy" ]; then
+		checkTempdir || return 1
+		if [ "$Lflag" -a -h "$1" -a -e "$1" ]; then
+			if [ -d "$1" ]; then
+				cp -a --parents -t "$TARGET_DIR/$tempdir" "$1/"
+			else
+				cp -a --parents -t "$TARGET_DIR/$tempdir" --dereference "$1"
+			fi
+		else
+			cp -a --parents -t "$TARGET_DIR/$tempdir" "$@"
+		fi
+	else
+		local mode
+		# create or append to tarfile
+		if [ -e "$TARGET_DIR/$archive" ]; then
+			mode=-r
+		else
+			mode=-c
+		fi
+		if [ "$Lflag" -a -h "$1" -a -e "$1" ]; then
+			if [ -d "$1" ] && ls -Ad $1/* &> /dev/null; then
+				${TAR[@]} $mode -f "$TARGET_DIR/$archive" $(ls -Ad $1/*)
+			else
+				${TAR[@]} $mode -f "$TARGET_DIR/$archive" --dereference "$1"
+			fi
+		else
+			${TAR[@]} $mode -f "$TARGET_DIR/$archive" "$@"
+		fi
+	fi
+	if [ $? -ne 0 ]; then
+		return 1
+	else
+		if [ "$vflag" ]; then
+			local file
+			for file in "$@"; do
+				echo "$archive: $file"
+			done
+		fi
+		return 0
+	fi
+} # processFiles
+
+# read definition files from command line
+for def in "$@"; do
+	cd "$RUNDIR"
+
+	if [ ! -f "$def" -o ! -r "$def" ]; then
+		printError "Can't access definition file \`$def'"
+		exitcode=1
+		continue
+	fi
+
+	# name the archive based on the name of the definition file
+	archive=$(basename "$def" | sed "s/${DEFINITION_EXT}$//i")
+
+	# attach a formatted `date' string to the archive name
+	if [ "$dflag" ]; then
+		archive="$(date +${format})${archive}"
+	fi
+	if [ "$Dflag" ]; then
+		archive="${archive}$(date +${format})"
+	fi
+	archive="${archive}${TAR_EXT}"
+
+	# remove existing tar archive
+	if [ -e "$TARGET_DIR/$archive" ]; then
+		confirmRemove "$archive" && rm "$TARGET_DIR/$archive"
+		if [ $? -ne 0 ]; then
+			exitcode=1
+			continue
+		fi
+	fi
+	echo "$archive"
+
+	# name the temp directory
+	read line < "$def"
+	if [[ "$line" =~ ^[[:blank:]]*# ]]; then
+		tempdir=$(echo "$line" | sed 's/^[[:blank:]]*#[[:blank:]]*\([[:alnum:]_.+-]*\).*/\1/')
+		[ -z "$tempdir" ] && tempdir=$(basename "$def")
+	else
+		tempdir=$(basename "$def")
+	fi
+	tempdir=$(echo "$tempdir" | sed "s/${DEFINITION_EXT}$//i")
+
+	# process definition file
+	for line in $(cat "$def")
+	do
+		processLine "$line"
+		[ $? -ne 0 ] && exitcode=1
+		[ "$tempdir_init" = "err" ] && break
+	done
+
+	if [ "$tempdir_init" = "err" ]; then
+		cleanUp
+		exitcode=1
+		continue
+	elif [ "$tempdir_init" -a -n "$(ls -A "$TARGET_DIR/$tempdir" 2> /dev/null)" ]; then
+		# temp directory is not empty; tar it up
+		cd "$TARGET_DIR"
+		if [ -e "$archive" ]; then
+			${TAR[@]} -rf "$archive" "$tempdir"
+		else
+			${TAR[@]} -cf "$archive" "$tempdir"
+		fi
+		if [ $? -ne 0 ]; then
+			cleanUp
+			exitcode=1
+			continue
+		fi
+	fi
+
+	# compress
+	if [ -e "$TARGET_DIR/$archive" ]; then
+		cd "$TARGET_DIR"
+		compressTar "$archive"
+		if [ $? -ne 0 ]; then
+			cleanUp
+			exitcode=1
+			continue
+		fi
+	fi
+
+	# remove temp directory
+	archive=
+	cleanUp
+	tempdir_init=
+done
+
+exit $exitcode
+
+# vim:set ts=4 sw=4 noet:

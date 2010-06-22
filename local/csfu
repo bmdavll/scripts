@@ -1,0 +1,42 @@
+#!/bin/bash
+
+csfu ()
+{
+	if mount | grep -q "$(basename "$1")"; then
+		fusermount -u "$1"
+		if [ $? -eq 0 ]; then
+			rmdir "$1" 2>/dev/null
+		else
+			code=1
+		fi
+	fi
+}
+
+code=0
+
+if [ $# -eq 0 ]; then
+	for MNT in ~/tmp/{cs*-??,wdl}
+	do
+		csfu "$MNT"
+	done
+else
+	for arg in "$@"
+	do
+		case "$arg" in
+		164)	MNT="cs164-cp"
+				;;
+		wdl)	MNT="wdl"
+				;;
+		ctest)	MNT="cs164-cp"
+				;;
+		soda)	MNT="soda"
+				;;
+		*)		exit 2
+				;;
+		esac
+		shift
+		csfu "$HOME/tmp/$MNT"
+	done
+fi
+
+exit $code
