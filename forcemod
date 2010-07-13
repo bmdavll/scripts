@@ -3,11 +3,11 @@
 PROG=$(basename "$0")
 IFS=$'\n'
 
-DIR_PERM=755
-FILE_PERM=644
+DIR_PERM=0
+FILE_PERM=0
 
 printUsage() {
-	echo "Usage: $PROG [-d MODE] [-f MODE] [-rR] [-L] FILE..."
+	echo "Usage: $PROG [-d MODE] [-f MODE] [-s] [-r] [-L] FILE..."
 }
 
 errorMsg() {
@@ -31,7 +31,7 @@ if [ "$1" = "--help" ]; then
 	exit 0
 fi
 
-while getopts 'hd:f:rRL' option
+while getopts 'hd:f:srRL' option
 do
 	case $option in
 	h)		printUsage
@@ -40,6 +40,9 @@ do
 	d)		DIR_PERM="$OPTARG"
 			;;
 	f)		FILE_PERM="$OPTARG"
+			;;
+	s)		DIR_PERM=755
+			FILE_PERM=644
 			;;
 	r|R)	rflag=1
 			;;
@@ -52,35 +55,49 @@ do
 done
 shift $((OPTIND - 1))
 
-if [[ "$FILE_PERM"  && ! "$FILE_PERM" =~ ^[0-7]{3}$ ]]; then
+if [ $# -eq 0 -o -z "$FILE_PERM" -o -z "$DIR_PERM" ]; then
+	printUsage >&2
+	exit 2
+elif [ "$FILE_PERM" = 0 -a "$DIR_PERM" = 0 ]; then
+	errorMsg "Nothing to do"
+	exit 0
+fi
+
+if   [[ "$FILE_PERM" != 0 && ! "$FILE_PERM" =~ ^[0-7]{3}$ && ! "$FILE_PERM" =~ ^[ugo]*[+-][rwx]+$ ]]; then
 	errorExit "$FILE_PERM: Invalid file permission"
-elif [[ "$DIR_PERM" && ! "$DIR_PERM"  =~ ^[0-7]{3}$ ]]; then
+elif [[ "$DIR_PERM"  != 0 && ! "$DIR_PERM"  =~ ^[0-7]{3}$ && ! "$DIR_PERM"  =~ ^[ugo]*[+-][rwx]+$ ]]; then
 	errorExit "$DIR_PERM: Invalid directory permission"
 fi
 
-if [ $# -eq 0 ]; then
-	printUsage >&2
-	exit 2
-fi
+PATH="${PATH#.:}"
+PATH="${PATH%:.}"
 
 declare -i code=0
 
 recurse() {
-	find $Lflag "$1" -type d -exec chmod "$DIR_PERM"  {} +
-	[ $? -ne 0 ] && code+=1
-	find $Lflag "$1" -type f -exec chmod "$FILE_PERM" {} +
-	[ $? -ne 0 ] && code+=1
+	if [ "$DIR_PERM" != 0 ]; then
+		find $Lflag "$1" -type d -execdir chmod "$DIR_PERM"  {} +
+		[ $? -ne 0 ] && code+=1
+	fi
+	if [ "$FILE_PERM" != 0 ]; then
+		find $Lflag "$1" -type f -execdir chmod "$FILE_PERM" {} +
+		[ $? -ne 0 ] && code+=1
+	fi
 }
 
 for arg in "$@"
 do
 	if [ -f "$arg" ]; then
-		chmod "$FILE_PERM" "$arg"
-		[ $? -ne 0 ] && code+=1
+		if [ "$FILE_PERM" != 0 ]; then
+			chmod "$FILE_PERM" "$arg"
+			[ $? -ne 0 ] && code+=1
+		fi
 	elif [ -d "$arg" ]; then
 		if [ ! "$rflag" ]; then
-			chmod "$DIR_PERM" "$arg"
-			[ $? -ne 0 ] && code+=1
+			if [ "$DIR_PERM" != 0 ]; then
+				chmod "$DIR_PERM" "$arg"
+				[ $? -ne 0 ] && code+=1
+			fi
 		else
 			if [ -r "$arg" ]; then
 				recurse "$arg"
