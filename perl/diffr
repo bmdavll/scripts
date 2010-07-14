@@ -1,0 +1,92 @@
+#!/usr/bin/env perl
+# Pretty-print wrapper for diff -qr
+#
+# Author:  David Liang <bmdavll nospam at gmail.com>
+# Date:    2010-07-13
+# License: GPLv3
+#
+use strict;
+use warnings;
+
+use List::Util qw(min max);
+
+use Getopt::Long qw(GetOptions);
+Getopt::Long::Configure qw(gnu_getopt no_auto_abbrev no_ignore_case);
+Getopt::Long::Configure qw(pass_through);
+
+my $print_only = 0;
+
+GetOptions(
+	# print only files present in one folder
+	'only|o' => \$print_only,
+);
+
+my @files = grep { -e $_ } @ARGV;
+my $file_pat = join '|', map { qr/\Q$_\E/ } @files;
+
+sub assign_idx {
+	my $dir = shift;
+	my $idx = 0;
+	my $len = 0;
+	for (my $i = 0; $i <= $#files; ++$i) {
+		$_ = $files[$i];
+		if ($dir =~ qr[^\Q$_\E(/|$)] && length($_) > $len) {
+			$len = length($_);
+			$idx = $i;
+		}
+	}
+	return $idx;
+}
+
+my @diffs;
+
+open OUT, '-|', 'diff', '-qr', @ARGV;
+
+while (<OUT>) {
+	chomp;
+	if (/^Only in ((?:$file_pat).*): (.+)$/) {
+		push @diffs, [ assign_idx($1), $1, $2 ];
+	}
+	elsif (/^Files ((?:$file_pat).*) and ((?:$file_pat).*) differ$/) {
+		push @diffs, [ undef, $1, $2 ];
+	}
+}
+
+my @indices = grep { defined } map { $_->[0] } @diffs;
+my $min_idx = (scalar @indices > 1 ? min(@indices) : 0);
+
+my $max_width = 0;
+
+foreach (@diffs) {
+	my $idx = $_->[0];
+	if (not defined $idx) {
+		$max_width = max($max_width, length($_->[1])) unless $print_only;
+	}
+	else {
+		$_->[1] = join '/', @{$_}[1..2];
+		delete $_->[2];
+		if ($idx == $min_idx) {
+			$max_width = max($max_width, length($_->[1]));
+		}
+	}
+}
+$max_width += 4; # separation between columns
+
+foreach (@diffs) {
+	my @diff = @{$_};
+	my $idx = shift @diff;
+	if (not defined $idx) {
+		printf "%-${max_width}s%s\n", @diff unless $print_only;
+	}
+	else {
+		if ($idx > $min_idx) {
+			printf "%-${max_width}s%s\n", "", @diff;
+		}
+		else {
+			printf "%s\n", @diff;
+		}
+	}
+}
+
+close OUT;
+exit $?/256;
