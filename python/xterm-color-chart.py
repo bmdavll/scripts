@@ -131,6 +131,36 @@ b00b01b02b03   d03d02d01d00   +08   .07.15
 """
 
 
+slabs = """
+a00a10a20a30a40a50b50b40b30b20b10b00
+a01a11a21a31a41a51b51b41b31b21b11b01
+a02a12a22a32a42a52b52b42b32b22b12b02
+a03a13a23a33a43a53b53b43b33b23b13b03
+a04a14a24a34a44a54b54b44b34b24b14b04
+a05a15a25a35a45a55b55b45b35b25b15b05
+
+c05c15c25c35c45c55d55d45d35d25d15d05
+c04c14c24c34c44c54d54d44d34d24d14d04
+c03c13c23c33c43c53d53d43d33d23d13d03
+c02c12c22c32c42c52d52d42d32d22d12d02
+c01c11c21c31c41c51d51d41d31d21d11d01
+c00c10c20c30c40c50d50d40d30d20d10d00
+
+e00e10e20e30e40e50f50f40f30f20f10f00
+e01e11e21e31e41e51f51f41f31f21f11f01
+e02e12e22e32e42e52f52f42f32f22f12f02
+e03e13e23e33e43e53f53f43f33f23f13f03
+e04e14e24e34e44e54f54f44f34f24f14f04
+e05e15e25e35e45e55f55f45f35f25f15f05
+
++01+02+03+04+05+06+07+08+09+10+11+12
++24+23+22+21+20+19+18+17+16+15+14+13
+
+.00.01.02.03.04.05.06.07
+.08.09.10.11.12.13.14.15
+"""
+
+
 ribbon_left = """
 a00a01a02a03a04a05b05c05d05e05f05f04f03f02f01f00e00d00c00b00
 a10a11a12a13a14a15b15c15d15e15f15f14f13f12f11f10e10d10c10b10
@@ -227,13 +257,17 @@ charts = {
         'whales': whale_shape_88,
         'slices': slices_88,
         'ribbon': ribbon_88,
-        'clouds': cloud_shape_88,},
+        'clouds': cloud_shape_88,
+    },
     256: {
         'cows': cow_shape,
         'whales': whale_shape,
         'slices': slices,
+        'slabs': slabs,
         'ribbon': ribbon,
-        'clouds': cloud_shape,}}
+        'clouds': cloud_shape,
+    }
+}
 
 # global settings
 
@@ -245,13 +279,27 @@ colours = 256
 # values copied from xterm 256colres.h:
 cube_steps = 0x00, 0x5f, 0x87, 0xaf, 0xd7, 0xff
 gray_steps = (0x08, 0x12, 0x1c, 0x26, 0x30, 0x3a, 0x44, 0x4e, 0x58, 0x62,
-    0x6c, 0x76, 0x80, 0x84, 0x94, 0x9e, 0xa8, 0xb2, 0xbc, 0xc6, 0xd0,
+    0x6c, 0x76, 0x80, 0x8a, 0x94, 0x9e, 0xa8, 0xb2, 0xbc, 0xc6, 0xd0,
     0xda, 0xe4, 0xee)
 # values copied from X11/rgb.txt and XTerm-col.ad:
-basic_colours = ((0,0,0), (205, 0, 0), (0, 205, 0), (205, 205, 0),
-    (0, 0, 238), (205, 0, 205), (0, 205, 205), (229, 229, 229),
-    (127, 127, 127), (255, 0, 0), (0, 255, 0), (255, 255, 0),
-    (0x5c, 0x5c, 0xff), (255, 0, 255), (0, 255, 255), (255, 255, 255))
+basic_colours = (
+    (0, 0, 0),
+    (205, 0, 0),
+    (0, 205, 0),
+    (205, 205, 0),
+    (0, 0, 238),
+    (205, 0, 205),
+    (0, 205, 205),
+    (229, 229, 229),
+    (127, 127, 127),
+    (255, 0, 0),
+    (0, 255, 0),
+    (255, 255, 0),
+    (0x5c, 0x5c, 0xff),
+    (255, 0, 255),
+    (0, 255, 255),
+    (255, 255, 255)
+)
 
 def set_88_colour_mode():
     """Switch to 88-colour mode."""
@@ -291,7 +339,7 @@ def n_to_gray(n):
     """Return an approximate desaturated value for colour-number n.
     Value is between 0.0 and 255.0."""
     r, g, b = n_to_rgb(n)
-    return 0.3*r + 0.59*g + 0.11*b
+    return 0.2989*r + 0.5870*g + 0.1140*b
 
 def n_to_prt(n):
     """Convert a colour number to the format used in the colour charts."""
@@ -405,14 +453,17 @@ def draw_chart(chart, origin, angle, numbers, cell_cols, cell_rows):
         return block(vtrans, row)
 
     def block(n, row):
-        if not numbers or row!=cell_rows-1:
-            return "\x1b[48;5;%dm%s" % (n, cell_pad)
         y = n_to_gray(n)
-        if y>0x30:
+        if y>0x40:
             # use black text
-            return "\x1b[48;5;%d;30m%02x%s" % (n, n, cell_pad[2:])
-        # else use gray text
-        return "\x1b[48;5;%d;37m%02x%s" % (n, n, cell_pad[2:])
+            c = '30'
+        else:
+            # use gray text
+            c = '37'
+        if numbers and row==cell_rows-1:
+            return ("\x1b[48;5;%d;"+c+"m%02x%s") % (n, n, cell_pad[2:])
+        else:
+            return "\x1b[48;5;%dm%s" % (n, cell_pad)
 
     def blank():
         return "\x1b[0m%s" % (cell_pad,)

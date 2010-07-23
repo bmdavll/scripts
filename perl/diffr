@@ -21,8 +21,8 @@ GetOptions(
 	'only|o' => \$print_only,
 );
 
-my @files = grep { -e $_ } @ARGV;
-my $file_pat = join '|', map { qr/\Q$_\E/ } @files;
+my @files = grep { -e } @ARGV;
+my $file_pat = join '|', map { qr[\Q$_\E] } @files;
 
 sub assign_idx {
 	my $dir = shift;
@@ -30,8 +30,8 @@ sub assign_idx {
 	my $len = 0;
 	for (my $i = 0; $i <= $#files; ++$i) {
 		$_ = $files[$i];
-		if ($dir =~ qr[^\Q$_\E(/|$)] && length($_) > $len) {
-			$len = length($_);
+		if ($dir =~ qr[^\Q$_\E(/|$)] && length > $len) {
+			$len = length;
 			$idx = $i;
 		}
 	}
@@ -39,9 +39,14 @@ sub assign_idx {
 }
 
 my @diffs;
+my @lines;
 
 open OUT, '-|', 'diff', '-qr', @ARGV;
 
+sub finish {
+	close OUT;
+	exit $?/256;
+}
 while (<OUT>) {
 	chomp;
 	if (/^Only in ((?:$file_pat).*): (.+)$/) {
@@ -50,9 +55,17 @@ while (<OUT>) {
 	elsif (/^Files ((?:$file_pat).*) and ((?:$file_pat).*) differ$/) {
 		push @diffs, [ undef, $1, $2 ];
 	}
+	else {
+		push @lines, $_;
+	}
+}
+if (!@diffs) {
+	print $_, $/ foreach @lines;
+	finish;
 }
 
-my @indices = grep { defined } map { $_->[0] } @diffs;
+my @seen;
+my @indices = grep { defined && !$seen[$_]++ } map { $_->[0] } @diffs;
 my $min_idx = (scalar @indices > 1 ? min(@indices) : 0);
 
 my $max_width = 0;
@@ -60,14 +73,12 @@ my $max_width = 0;
 foreach (@diffs) {
 	my $idx = $_->[0];
 	if (not defined $idx) {
-		$max_width = max($max_width, length($_->[1])) unless $print_only;
+		$max_width = max($max_width, length $_->[1]) unless $print_only;
 	}
 	else {
-		$_->[1] = join '/', @{$_}[1..2];
+		$_->[1] = join '/', $_->[1], $_->[2];
 		delete $_->[2];
-		if ($idx == $min_idx) {
-			$max_width = max($max_width, length($_->[1]));
-		}
+		$max_width = max($max_width, length $_->[1]) if $idx == $min_idx;
 	}
 }
 $max_width += 4; # separation between columns
@@ -88,5 +99,4 @@ foreach (@diffs) {
 	}
 }
 
-close OUT;
-exit $?/256;
+finish;

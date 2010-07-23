@@ -7,7 +7,7 @@ DIR_PERM=0
 FILE_PERM=0
 
 printUsage() {
-	echo "Usage: $PROG [-d MODE] [-f MODE] [-s] [-r] [-L] FILE..."
+	echo "Usage: $PROG [-d MODE] [-f MODE] [-c] [-r] [-L] FILE..."
 }
 
 errorMsg() {
@@ -31,7 +31,7 @@ if [ "$1" = "--help" ]; then
 	exit 0
 fi
 
-while getopts 'hd:f:srRL' option
+while getopts 'hd:f:crRL' option
 do
 	case $option in
 	h)		printUsage
@@ -41,7 +41,7 @@ do
 			;;
 	f)		FILE_PERM="$OPTARG"
 			;;
-	s)		DIR_PERM=755
+	c)		DIR_PERM=755
 			FILE_PERM=644
 			;;
 	r|R)	rflag=1

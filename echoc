@@ -1,14 +1,14 @@
 #!/bin/bash
 
-argv=()
+opts=()
 
 while [[ "$1" == -* ]]; do
-	argv+=("$1")
+	opts+=("$1")
 	shift
 done
 
 if [ $# -eq 0 ]; then
-	echo "${argv[@]}"
+	echo "${opts[@]}"
 	exit
 fi
 
@@ -23,12 +23,27 @@ case "$1" in
 esac
 shift
 
-if [[ ! "$c" =~ ^[0-9]+$ ]]; then
-	echo >&2 "Usage: $(basename "$0") " \
-			 "r[ed] | g[reen] | y[ellow] | b[lue] | p[urple] | c[yan] | N  ..."
+if [[ ! "$c" =~ ^[0-9]+(,[0-9]+)?$ ]]; then
+	echo >&2 "Usage: $(basename "$0") SPEC TEXT"
+	echo >&2 "SPEC:  r[ed]  g[reen]  y[ellow]  b[lue]  p[urple]  c[yan]  FG[,BG]"
 	exit 2
+elif [[ "$c" =~ ^([0-9]+),([0-9]+)$ ]]; then
+	c="${BASH_REMATCH[1]}"
+	b=";${BASH_REMATCH[2]}"
+else
+	b=
 fi
 
-echo -en "\e[$c;1m"
-echo "${argv[@]}" "$@"
-echo -en "\e[0m"
+while [[ "$1" == -* ]]; do
+	opts+=("$1")
+	shift
+done
+
+echo -ne "\e[$c;1${b}m"
+echo -n  "${opts[@]}" "$@"
+echo -ne "\e[0m"
+
+if [[ "${opts[*]}" != *n* ]]; then
+	echo
+fi
+
