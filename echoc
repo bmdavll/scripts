@@ -23,15 +23,12 @@ case "$1" in
 esac
 shift
 
-if [[ ! "$c" =~ ^[0-9]+(,[0-9]+)?$ ]]; then
+if [[ ! "$c" =~ ^[0-9]+(\;[0-9]+)*$ ]]; then
 	echo >&2 "Usage: $(basename "$0") SPEC TEXT"
-	echo >&2 "SPEC:  r[ed]  g[reen]  y[ellow]  b[lue]  p[urple]  c[yan]  FG[,BG]"
+	echo >&2 "SPEC:  r[ed] | g[reen] | y[ellow] | b[lue] | p[urple] | c[yan] | ANSI_SGR"
 	exit 2
-elif [[ "$c" =~ ^([0-9]+),([0-9]+)$ ]]; then
-	c="${BASH_REMATCH[1]}"
-	b=";${BASH_REMATCH[2]}"
-else
-	b=
+elif [[ "$c" != *\;* ]]; then
+	c+=';1'
 fi
 
 while [[ "$1" == -* ]]; do
@@ -39,7 +36,7 @@ while [[ "$1" == -* ]]; do
 	shift
 done
 
-echo -ne "\e[$c;1${b}m"
+echo -ne "\e[${c}m"
 echo -n  "${opts[@]}" "$@"
 echo -ne "\e[0m"
 
