@@ -12,22 +12,26 @@ if [ $# -eq 0 ]; then
 	exit
 fi
 
+bold=1
+
 case "$1" in
 	r|red)		c=31 ;;
 	g|green)	c=32 ;;
 	y|yellow)	c=33 ;;
 	b|blue)		c=34 ;;
-	p|purple)	c=35 ;;
+	m|magenta)	c=35 ;;
 	c|cyan)		c=36 ;;
-	*)			c=$1 ;;
+	*)			c=$1
+				bold=
+				;;
 esac
 shift
 
-if [[ ! "$c" =~ ^[0-9]+(\;[0-9]+)*$ ]]; then
+if [[ ! "$c" =~ ^[0-9]+(\;[0-9]*)*$ ]]; then
 	echo >&2 "Usage: $(basename "$0") SPEC TEXT"
-	echo >&2 "SPEC:  r[ed] | g[reen] | y[ellow] | b[lue] | p[urple] | c[yan] | ANSI_SGR"
+	echo >&2 "SPEC:  r[ed] | g[reen] | y[ellow] | b[lue] | m[agenta] | c[yan] | ANSI_SGR"
 	exit 2
-elif [[ "$c" != *\;* ]]; then
+elif [[ "$c" != *\;* && "$bold" ]]; then
 	c+=';1'
 fi
 

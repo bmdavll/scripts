@@ -41,7 +41,7 @@ sub assign_idx {
 my @diffs;
 my @lines;
 
-open OUT, '-|', 'diff', '-qr', @ARGV;
+open OUT, '-|', 'diff', '-qr', @ARGV or die $!, "\n";
 
 sub finish {
 	close OUT;
