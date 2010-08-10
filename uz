@@ -1,0 +1,142 @@
+#!/bin/bash
+
+PROG=$(basename "$0")
+
+printUsage() {
+	echo "Usage: $PROG [-v] FILE..."
+}
+
+errorMsg() {
+	if [ $# -gt 0 ]; then
+		echo >&2 "$PROG: $@"
+	fi
+}
+
+errorExit() {
+	errorMsg "$@"
+	exit 3
+}
+trap "errorExit aborted" 2 3
+trap "errorExit terminated" 1 15
+
+if [ "$1" = "--help" ]; then
+	printUsage
+	exit 0
+fi
+
+verbose=
+
+while getopts 'hv' option
+do
+	case $option in
+	h)		printUsage
+			exit 0
+			;;
+	v)		verbose=-v
+			;;
+	?)		printUsage >&2
+			exit 2
+			;;
+	esac
+done
+shift $((OPTIND - 1))
+
+if [ $# -eq 0 ]; then
+	printUsage >&2
+	exit 2
+fi
+
+extension() {
+	if [[ "$file" == *."$1" ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+declare -i code=0
+
+WD="$PWD"
+
+for arg
+do
+	cd "$WD"
+
+	file=$(basename -- "$arg")
+
+	if [ ! -f "$arg" ] || ! cd "$(dirname -- "$arg")"; then
+		errorMsg "$arg: File not found"
+		false
+
+	elif extension tar ||
+		 extension tar.gz  || extension tgz  ||
+		 extension tar.bz2 || extension tbz2 ||
+		 extension tar.bz  || extension tbz
+	then
+		top_files=$(tar tf "$file" 2>/dev/null | egrep '^[^/]+/?$' -cm 2)
+
+		if (( top_files == 0 )); then
+			errorMsg "$arg: Wrong format"
+			false
+		elif (( top_files == 1 )); then
+			tar xf "$file" $verbose
+		else
+			dir=$(echo "$file" | perl -pe 's/(\.tar(\.[gb]z2?)?|\.t[gb]z2?)$//')
+			mkdir "$dir" && tar xf "$file" $verbose -C "$dir"
+		fi
+
+	elif extension zip
+	then
+		if [ ! "$verbose" ]
+		then zip_verbose=-q
+		else zip_verbose=
+		fi
+		top_files=$(unzip -lqq "$file" 2>/dev/null | perl -e '
+			while (<>) {
+				s[^\s*(\S+\s+){3}][];
+				s[/.*][];
+				$seen{$_} += 1;
+			}
+			print scalar keys %seen;
+		')
+
+		if (( top_files == 0 )); then
+			errorMsg "$arg: Wrong format"
+			false
+		elif (( top_files == 1 )); then
+			unzip $zip_verbose "$file"
+		else
+			dir="${dir%.zip}"
+			mkdir "$dir" && unzip $zip_verbose "$file" -d "$dir"
+		fi
+
+	elif extension Z
+	then
+		uncompress $verbose "$file"
+
+	elif extension gz
+	then
+		gunzip $verbose "$file"
+
+	elif extension bz2 || extension bz
+	then
+		bunzip2 $verbose "$file"
+
+	elif extension rar
+	then
+		if [ ! "$verbose" ]
+		then rar_verbose=-idq
+		else rar_verbose=
+		fi
+		unrar x $rar_verbose "$file"
+
+	else
+		errorMsg "$arg: Filetype not recognized"
+		false
+	fi
+
+	code+=$?
+done
+
+exit $code
+
