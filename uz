@@ -3,7 +3,7 @@
 PROG=$(basename "$0")
 
 printUsage() {
-	echo "Usage: $PROG [-v] FILE..."
+	echo "Usage: $PROG [-v] [-d] FILE..."
 }
 
 errorMsg() {
@@ -25,14 +25,17 @@ if [ "$1" = "--help" ]; then
 fi
 
 verbose=
+dflag=
 
-while getopts 'hv' option
+while getopts 'hvd' option
 do
 	case $option in
 	h)		printUsage
 			exit 0
 			;;
 	v)		verbose=-v
+			;;
+	d)		dflag=1
 			;;
 	?)		printUsage >&2
 			exit 2
@@ -106,7 +109,7 @@ do
 		elif (( top_files == 1 )); then
 			unzip $zip_verbose "$file"
 		else
-			dir="${dir%.zip}"
+			dir="${file%.zip}"
 			mkdir "$dir" && unzip $zip_verbose "$file" -d "$dir"
 		fi
 
@@ -135,7 +138,13 @@ do
 		false
 	fi
 
-	code+=$?
+	if [ $? -eq 0 ]; then
+		if [ "$dflag" ]; then
+			cd "$WD" 2>/dev/null && rm -f "$arg"
+		fi
+	else
+		code+=1
+	fi
 done
 
 exit $code
