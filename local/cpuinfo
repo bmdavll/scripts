@@ -1,0 +1,4 @@
+#!/bin/bash
+
+echo -n $(cpufreq-info --freq --human)' '
+cpufreq-info --policy | awk '{print $3}'

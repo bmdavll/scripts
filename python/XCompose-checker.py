@@ -35,22 +35,18 @@ def emit(line):
         return
 
     pre = m.group(1)
-    char = m.group(2)
+    str = m.group(2)
     aft = m.group(4)
 
-    if len(char) > 1:
-        print(line, end='')
-        return
-
-    u = codepoint(char)
+    u = codepoint(str[0])
     if u:
         try:
-            desc = ' # '+name(char)
+            desc = ' # '+name(str[0])
         except ValueError:
             desc = (' '+aft if aft else '')
 
         print( '%s"%s"\t%s%s' %
-               (pre, char, u, desc) )
+               (pre, str, u, desc) )
     else:
         print(line, end='')
 

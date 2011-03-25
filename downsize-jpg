@@ -1,0 +1,218 @@
+#!/bin/bash
+
+PROG=$(basename "$0")
+IFS=$'\n'
+
+printUsage() {
+	echo "Usage: $PROG [-r] [-i] [-n] [-p] [-t|-s|-m|-l|-x|-g GEOMETRY] FILE..."
+}
+printHelp() {
+	echo
+	echo "  -r	recursive"
+	echo "  -i	interactive"
+	echo "  -n	dry run"
+	echo "  -p	preserve date"
+	echo "  -t	tiny"
+	echo "  -s	small"
+	echo "  -m	medium (default)"
+	echo "  -l	large"
+	echo "  -x	extra large"
+	echo
+}
+
+errorMsg() {
+	echo >&2 "$@"
+}
+
+errorExit() {
+	echo >&2 "$PROG: $@"
+	exit 3
+}
+trap "errorExit aborted" 2 3
+trap "errorExit terminated" 1 15
+
+rflag=
+iflag=
+nflag=
+pflag=
+
+sflag=m
+GEOMETRY=
+SCALES=( 25.0 37.5 50.0 62.5 75.0 )
+MAX_QUALITY=90
+
+if [ "$1" = "--help" ]; then
+	printUsage
+	printHelp
+	exit 0
+fi
+
+while getopts 'hrinptsmlxg:' option
+do
+	case $option in
+	h)	printUsage
+		exit 0
+		;;
+	r)	rflag=1
+		;;
+	i)	iflag=1
+		;;
+	n)	nflag=1
+		;;
+	p)	pflag=1
+		;;
+	t|s|m|l|x)
+		sflag="$option"
+		;;
+	g)	GEOMETRY="$OPTARG"
+		;;
+	?)	printUsage >&2
+		exit 2
+		;;
+	esac
+done
+shift $((OPTIND - 1))
+
+if [ $# -eq 0 ]; then
+	printUsage >&2
+	exit 2
+fi
+
+declare -i code=0
+
+downsize() {
+	g=
+	qual=
+	if [ -n "$GEOMETRY" ]; then
+		g="$GEOMETRY"
+	else
+		id="$(identify -format "%b %w %h" "$1")"
+		if [[ "$id" =~ ^([0-9]+)B\ ([0-9]+)\ ([0-9]+)$ ]]; then
+			s="${BASH_REMATCH[1]}"
+			x="${BASH_REMATCH[2]}"
+			y="${BASH_REMATCH[3]}"
+
+			if [ "$sflag" = "t" ]; then
+				if   (( $s >= 1337000 && ( $x >= 2560 || $y >= 2560 ) )); then
+					g=0
+				elif (( $s >=  584000 && ( $x >= 1707 || $y >= 1707 ) )); then
+					g=1
+				elif (( $s >=  316000 && ( $x >= 1280 || $y >= 1280 ) )); then
+					g=2
+				elif (( $s >=  260000 && ( $x >= 1024 || $y >= 1024 ) )); then
+					g=3
+				elif (( $s >=  140000 && ( $x >=  853 || $y >=  853 ) )); then
+					g=4
+				fi
+				if [[ "$g" && $MAX_QUALITY -lt $(identify -format "%Q" "$1") ]]
+				then qual="-quality${IFS}$MAX_QUALITY"
+				fi
+			elif [ "$sflag" = "s" ]; then
+				if   (( $s >= 1800000 && ( $x >= 3200 || $y >= 3200 ) )); then
+					g=0
+				elif (( $s >=  830000 && ( $x >= 2133 || $y >= 2133 ) )); then
+					g=1
+				elif (( $s >=  450000 && ( $x >= 1600 || $y >= 1600 ) )); then
+					g=2
+				elif (( $s >=  369000 && ( $x >= 1280 || $y >= 1280 ) )); then
+					g=3
+				elif (( $s >=  200000 && ( $x >= 1067 || $y >= 1067 ) )); then
+					g=4
+				fi
+			elif [ "$sflag" = "m" ]; then
+				if   (( $s >= 3200000 && ( $x >= 4096 || $y >= 4096 ) )); then
+					g=0
+				elif (( $s >= 1337000 && ( $x >= 2731 || $y >= 2731 ) )); then
+					g=1
+				elif (( $s >=  800000 && ( $x >= 2048 || $y >= 2048 ) )); then
+					g=2
+				elif (( $s >=  500000 && ( $x >= 1638 || $y >= 1638 ) )); then
+					g=3
+				elif (( $s >=  350000 && ( $x >= 1365 || $y >= 1365 ) )); then
+					g=4
+				fi
+			elif [ "$sflag" = "l" ]; then
+				if   (( $s >= 4504000 && ( $x >= 5120 || $y >= 5120 ) )); then
+					g=0
+				elif (( $s >= 2215000 && ( $x >= 3413 || $y >= 3413 ) )); then
+					g=1
+				elif (( $s >= 1160000 && ( $x >= 2560 || $y >= 2560 ) )); then
+					g=2
+				elif (( $s >= 1000000 && ( $x >= 2048 || $y >= 2048 ) )); then
+					g=3
+				elif (( $s >=  500000 && ( $x >= 1707 || $y >= 1707 ) )); then
+					g=4
+				fi
+			elif [ "$sflag" = "x" ]; then
+				if   (( $s >= 7944000 && ( $x >= 7680 || $y >= 7680 ) )); then
+					g=0
+				elif (( $s >= 3525000 && ( $x >= 5120 || $y >= 5120 ) )); then
+					g=1
+				elif (( $s >= 2100000 && ( $x >= 3840 || $y >= 3840 ) )); then
+					g=2
+				elif (( $s >= 1500000 && ( $x >= 3072 || $y >= 3072 ) )); then
+					g=3
+				elif (( $s >= 1000000 && ( $x >= 2560 || $y >= 2560 ) )); then
+					g=4
+				fi
+			else
+				errorExit "No scale specified"
+			fi
+			[ "$g" ] && g="${SCALES[$g]}%"
+		else
+			errorMsg "$1: Error identifying file"
+		fi
+	fi
+	[ -z "$g" ]  && return
+	if [ "$iflag" ]; then
+		echo -n "$1: resize $g [y/a/N] " && read
+		if [[ "$REPLY" == [Aa]* ]]; then
+			iflag=
+		elif [[ "$REPLY" != [Yy]* ]]; then
+			return
+		fi
+	fi
+	if [ "$nflag" ]; then
+		echo -n "$g"$'\t'
+		stat --printf='%s\t' "$1"
+		echo "$1"
+		return
+	else
+		echo mogrify -resize "$g"${qual:+ }${qual:-$'\t'$'\t'}$'\t'"$1"
+	fi
+	modtime="$(stat -c %y "$1")"
+	mogrify -resize "$g" $qual "$1" || code+=1
+	[[ "$pflag" && -n "$modtime" ]] && touch -d "$modtime" "$1"
+}
+
+shopt -s nocasematch
+
+TYPE="${PROG##*-}"
+[[ ! "$TYPE" =~ ^[a-z]{3,4}$ ]] && errorExit "Bad filetype"
+
+for arg in "$@"
+do
+	if [ -f "$arg" ]; then
+		if [[ "$arg" =~ \."$TYPE"$ ]]; then
+			downsize "$arg"
+		else
+			errorMsg "$arg: Skipping non-$TYPE file"
+		fi
+	elif [ -d "$arg" ]; then
+		if [ "$rflag" ]; then
+			for file in $(find "$arg" -type f -iname "*.$TYPE" | sort)
+			do
+				downsize "$file"
+			done
+		else
+			errorMsg "$arg: Skipping directory"
+		fi
+	else
+		errorMsg "$arg: No such file or directory"
+		code+=1
+	fi
+done
+
+exit $code
+
+# vim:set ts=4 sw=4 noet ft=sh:

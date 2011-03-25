@@ -1,0 +1,105 @@
+#!/bin/bash
+
+### IMGURDL - AN IMGUR ALBUM DOWNLOAD UTILITY
+
+# Copyright (c) 2011, Robert Smith <quad [at] symbo1ics [dot] com>
+# All rights reserved.
+
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#     * Redistributions of source code must retain the above copyright
+#       notice, this list of conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above copyright
+#       notice, this list of conditions and the following disclaimer in the
+#       documentation and/or other materials provided with the distribution.
+#     * Neither the name of the Robert Smith nor the
+#       names of its contributors may be used to endorse or promote products
+#       derived from this software without specific prior written permission.
+
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+# FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL ROBERT
+# SMITH BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
+# USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+# DAMAGE.
+
+
+### If you like this script, please consider donating to
+###    ReikoNoMusha [at] gmail [dot] com
+### via PayPal or maybe give my boring blog a peek
+###    www.symbo1ics.com/blog
+
+
+if [ $# -ne 3 ]
+then
+    echo -n "imgurdl - Copyright (c) 2011 Robert Smith"
+    echo " <quad [at] symbo1ics [dot] com>"
+    echo
+    echo "Usage: $0 DIR URL NUMPAGES"
+    echo "    Download images from an imgur album. When downloading, each"
+    echo "    dot that appears represents a downloaded image. A space means"
+    echo "    the image already exists and was skipped. Handy for updating."
+    echo
+    echo "    DIR     : A directory name, where to save images to."
+    echo "    URL     : The url to the 'all' page. For example"
+    echo "                  http://redditalien.imgur.com/MyFamily/all"
+    echo "    NUMPAGES: The number of pages to download. For example,"
+    echo "              specifying '4' will download pages 1 through 4."
+    echo
+    echo "Example: $ $0 \"./IMGS\" \"http://x075.imgur.com/7NCB2/all\" 2"
+    echo
+    echo "If you like this script, please consider donating to"
+    echo "     ReikoNoMusha [at] gmail [dot] com"
+    echo "via PayPal, or maybe give my boring blog a peek"
+    echo "    www.symbo1ics.com/blog"
+
+    exit 1
+fi
+
+save2dir=$1
+mainpage=$2
+numpages=$3
+
+dldata="/tmp/$RANDOM-dldata"
+psdata="/tmp/$RANDOM-psdata"
+
+doit ()
+{
+    touch $dldata
+
+    for i in $(seq 1 $numpages)
+    do
+        echo "Fetching contents on page $i..."
+        curl -s "$mainpage?p=$i" >> $dldata
+    done
+
+    echo "Parsing link data..."
+    grep -P -o "\"http://i.imgur.com/\w{5}s\.\w{3}\"" $dldata > $psdata
+    sed -i -e 's/"//g' -e 's/http:\/\/i.imgur.com\///g' -e 's/s\./\./g' $psdata
+
+    echo -n "Downloading images"
+    for i in $(cat $psdata)
+    do
+        if [ ! -f "$save2dir/$i" ]
+        then
+#            echo "$save2dir/$i"
+            curl -s --create-dirs -o "$save2dir/$i" "http://i.imgur.com/$i"
+            echo -n "."
+        else
+            echo -n " "
+        fi
+    done
+    echo
+    echo "Done."
+}
+
+doit
+
+exit 0
