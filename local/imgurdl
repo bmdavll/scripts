@@ -39,28 +39,28 @@
 
 if [ $# -ne 3 ]
 then
-    echo -n "imgurdl - Copyright (c) 2011 Robert Smith"
-    echo " <quad [at] symbo1ics [dot] com>"
-    echo
-    echo "Usage: $0 DIR URL NUMPAGES"
-    echo "    Download images from an imgur album. When downloading, each"
-    echo "    dot that appears represents a downloaded image. A space means"
-    echo "    the image already exists and was skipped. Handy for updating."
-    echo
-    echo "    DIR     : A directory name, where to save images to."
-    echo "    URL     : The url to the 'all' page. For example"
-    echo "                  http://redditalien.imgur.com/MyFamily/all"
-    echo "    NUMPAGES: The number of pages to download. For example,"
-    echo "              specifying '4' will download pages 1 through 4."
-    echo
-    echo "Example: $ $0 \"./IMGS\" \"http://x075.imgur.com/7NCB2/all\" 2"
-    echo
-    echo "If you like this script, please consider donating to"
-    echo "     ReikoNoMusha [at] gmail [dot] com"
-    echo "via PayPal, or maybe give my boring blog a peek"
-    echo "    www.symbo1ics.com/blog"
+	echo -n "imgurdl - Copyright (c) 2011 Robert Smith"
+	echo " <quad [at] symbo1ics [dot] com>"
+	echo
+	echo "Usage: $0 DIR URL NUMPAGES"
+	echo "    Download images from an imgur album. When downloading, each"
+	echo "    dot that appears represents a downloaded image. A space means"
+	echo "    the image already exists and was skipped. Handy for updating."
+	echo
+	echo "    DIR     : A directory name, where to save images to."
+	echo "    URL     : The url to the 'all' page. For example"
+	echo "                  http://redditalien.imgur.com/MyFamily/all"
+	echo "    NUMPAGES: The number of pages to download. For example,"
+	echo "              specifying '4' will download pages 1 through 4."
+	echo
+	echo "Example: $ $0 \"./IMGS\" \"http://x075.imgur.com/7NCB2/all\" 2"
+	echo
+	echo "If you like this script, please consider donating to"
+	echo "     ReikoNoMusha [at] gmail [dot] com"
+	echo "via PayPal, or maybe give my boring blog a peek"
+	echo "    www.symbo1ics.com/blog"
 
-    exit 1
+	exit 1
 fi
 
 save2dir=$1
@@ -70,34 +70,34 @@ numpages=$3
 dldata="/tmp/$RANDOM-dldata"
 psdata="/tmp/$RANDOM-psdata"
 
-doit ()
+doit()
 {
-    touch $dldata
+	touch $dldata
 
-    for i in $(seq 1 $numpages)
-    do
-        echo "Fetching contents on page $i..."
-        curl -s "$mainpage?p=$i" >> $dldata
-    done
+	for i in $(seq 1 $numpages)
+	do
+		echo "Fetching contents on page $i..."
+		curl -s "$mainpage?p=$i" >> $dldata
+	done
 
-    echo "Parsing link data..."
-    grep -P -o "\"http://i.imgur.com/\w{5}s\.\w{3}\"" $dldata > $psdata
-    sed -i -e 's/"//g' -e 's/http:\/\/i.imgur.com\///g' -e 's/s\./\./g' $psdata
+	echo "Parsing link data..."
+	grep -P -o "\"http://i.imgur.com/\w{5}s\.\w{3}\"" $dldata > $psdata
+	sed -i -e 's/"//g' -e 's/http:\/\/i.imgur.com\///g' -e 's/s\./\./g' $psdata
 
-    echo -n "Downloading images"
-    for i in $(cat $psdata)
-    do
-        if [ ! -f "$save2dir/$i" ]
-        then
-#            echo "$save2dir/$i"
-            curl -s --create-dirs -o "$save2dir/$i" "http://i.imgur.com/$i"
-            echo -n "."
-        else
-            echo -n " "
-        fi
-    done
-    echo
-    echo "Done."
+	echo -n "Downloading images"
+	for i in $(cat $psdata)
+	do
+		if [ ! -f "$save2dir/$i" ]
+		then
+			# echo "$save2dir/$i"
+			curl -s --create-dirs -o "$save2dir/$i" "http://i.imgur.com/$i"
+			echo -n "."
+		else
+			echo -n " "
+		fi
+	done
+	echo
+	echo "Done."
 }
 
 doit

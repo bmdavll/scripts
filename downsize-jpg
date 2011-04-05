@@ -4,9 +4,11 @@ PROG=$(basename "$0")
 IFS=$'\n'
 
 printUsage() {
-	echo "Usage: $PROG [-r] [-i] [-n] [-p] [-t|-s|-m|-l|-x|-g GEOMETRY] FILE..."
+	echo "Usage: $PROG [-r] [-i] [-n] [-p]"
+	echo "       $(printf '%*s' ${#PROG} ' ') [-q MAX_QUAL] [-t|-s|-m|-l|-x|-g GEOMETRY] FILE..."
 }
 printHelp() {
+	printUsage
 	echo
 	echo "  -r	recursive"
 	echo "  -i	interactive"
@@ -18,12 +20,19 @@ printHelp() {
 	echo "  -l	large"
 	echo "  -x	extra large"
 	echo
+	echo "  GEOMETRY"
+	echo "	NONE"
+	echo "	{scale}%"
+	echo "	{width}  x{height}"
+	echo "	{max_width}x{max_height}  {max_width}x{max_height}>"
+	echo "	{width}x{height}!"
+	echo "	{area}@"
+	echo
 }
 
 errorMsg() {
 	echo >&2 "$@"
 }
-
 errorExit() {
 	echo >&2 "$PROG: $@"
 	exit 3
@@ -35,19 +44,19 @@ rflag=
 iflag=
 nflag=
 pflag=
+qflag=
 
 sflag=m
+MAX_QUAL=
 GEOMETRY=
 SCALES=( 25.0 37.5 50.0 62.5 75.0 )
-MAX_QUALITY=90
 
 if [ "$1" = "--help" ]; then
-	printUsage
 	printHelp
 	exit 0
 fi
 
-while getopts 'hrinptsmlxg:' option
+while getopts 'hrinptsmlxq:g:' option
 do
 	case $option in
 	h)	printUsage
@@ -64,6 +73,9 @@ do
 	t|s|m|l|x)
 		sflag="$option"
 		;;
+	q)	qflag=1
+		MAX_QUAL="$OPTARG"
+		;;
 	g)	GEOMETRY="$OPTARG"
 		;;
 	?)	printUsage >&2
@@ -73,12 +85,20 @@ do
 done
 shift $((OPTIND - 1))
 
-if [ $# -eq 0 ]; then
+if [[ $# -eq 0 || ( "$MAX_QUAL" && ! "$MAX_QUAL" =~ ^[1-9][0-9]?$ ) ]]; then
 	printUsage >&2
 	exit 2
 fi
 
+[ "$sflag" = "t" -a ! "$MAX_QUAL" ] && MAX_QUAL=90
+
 declare -i code=0
+
+shopt -s nocasematch
+
+TYPE="${PROG##*-}"
+[[ ! "$TYPE" =~ ^[a-z]{3,4}$ ]] && errorExit "Bad filetype"
+
 
 downsize() {
 	g=
@@ -103,9 +123,6 @@ downsize() {
 					g=3
 				elif (( $s >=  140000 && ( $x >=  853 || $y >=  853 ) )); then
 					g=4
-				fi
-				if [[ "$g" && $MAX_QUALITY -lt $(identify -format "%Q" "$1") ]]
-				then qual="-quality${IFS}$MAX_QUALITY"
 				fi
 			elif [ "$sflag" = "s" ]; then
 				if   (( $s >= 1800000 && ( $x >= 3200 || $y >= 3200 ) )); then
@@ -163,9 +180,17 @@ downsize() {
 			errorMsg "$1: Error identifying file"
 		fi
 	fi
-	[ -z "$g" ]  && return
+	if [[ "$MAX_QUAL" && "$MAX_QUAL" -lt $(identify -format "%Q" "$1") ]]; then
+		qual="-quality${IFS}$MAX_QUAL"
+	fi
+	if [ -z "$g" -o "$g" = NONE ]; then
+		if [[ ! "$qflag" || -z "$qual" ]]
+		then return
+		else g=
+		fi
+	fi
 	if [ "$iflag" ]; then
-		echo -n "$1: resize $g [y/a/N] " && read
+		echo -n "$1: resize ${g}${g:+ }${qual:+q$MAX_QUAL } [y/a/N] " && read
 		if [[ "$REPLY" == [Aa]* ]]; then
 			iflag=
 		elif [[ "$REPLY" != [Yy]* ]]; then
@@ -173,22 +198,19 @@ downsize() {
 		fi
 	fi
 	if [ "$nflag" ]; then
-		echo -n "$g"$'\t'
-		stat --printf='%s\t' "$1"
-		echo "$1"
+		echo -n "$g"$'\t'"${qual:+q$MAX_QUAL}"$'\t'
+		stat --printf='%s' "$1"
+		echo $'\t'"$1"
 		return
 	else
-		echo mogrify -resize "$g"${qual:+ }${qual:-$'\t'$'\t'}$'\t'"$1"
+		echo mogrify ${g:+-resize} ${g:-$'\t'}$'\t'${qual:-$'\t'}$'\t'"$1"
 	fi
 	modtime="$(stat -c %y "$1")"
-	mogrify -resize "$g" $qual "$1" || code+=1
-	[[ "$pflag" && -n "$modtime" ]] && touch -d "$modtime" "$1"
+	mogrify ${g:+-resize} $g $qual "$1" || code+=1
+	if [[ "$pflag" && -n "$modtime" ]]; then
+		touch -d "$modtime" "$1"
+	fi
 }
-
-shopt -s nocasematch
-
-TYPE="${PROG##*-}"
-[[ ! "$TYPE" =~ ^[a-z]{3,4}$ ]] && errorExit "Bad filetype"
 
 for arg in "$@"
 do
