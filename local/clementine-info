@@ -1,0 +1,40 @@
+#!/bin/bash
+# vim:ts=4 sw=4 et:
+
+PLAYER=org.mpris.MediaPlayer2.clementine
+metadata=$(qdbus $PLAYER /Player GetMetadata 2>/dev/null)
+[ -z "$metadata" ] && echo && exit
+
+get() {
+    echo "$metadata" | grep "^$1:" | sed "s/^$1:[[:blank:]]\+//"
+}
+LE=$(get time)
+TI=$(get title)
+AR=$(get artist)
+TN=$(get tracknumber)
+AL=$(get album)
+YR=$(get year)
+GE=$(get genre)
+
+str+="$TI${AR:+ · by }$AR · "
+str+=$( echo "$LE" | awk '{
+    if (! $0) exit;
+    h = int($0 / 3600);
+    if (h) printf "%s:", h;
+    $0 = $0 % 3600;
+    m = int($0 / 60);
+    printf  "%s%s", ((h && m < 10) ? 0 : ""), m;
+    s = $0 % 60;
+    printf ":%s%s",       (s < 10  ? 0 : ""), s;
+}' )$'\n'
+if [ "$AL" ]; then
+    str+="${TN:+№.}$TN${TN:+ }from ${AL}"
+    sep=' · '
+fi
+if [ "$YR" ]; then
+    str+="${sep}$YR"
+    sep=' · '
+fi
+str+="${GE:+$sep}$GE"
+
+echo "$str" | sed 's/&/＆/' | grep -Po '^.{0,99}[ -~]'
