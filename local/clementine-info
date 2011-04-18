@@ -5,6 +5,10 @@ PLAYER=org.mpris.MediaPlayer2.clementine
 metadata=$(qdbus $PLAYER /Player GetMetadata 2>/dev/null)
 [ -z "$metadata" ] && echo && exit
 
+PT=$(qdbus $PLAYER /Player PositionGet 2>/dev/null)
+PT=$((PT/1000))
+[ "$PT" = 0 ] && echo && exit
+
 get() {
     echo "$metadata" | grep "^$1:" | sed "s/^$1:[[:blank:]]\+//"
 }
@@ -16,8 +20,7 @@ AL=$(get album)
 YR=$(get year)
 GE=$(get genre)
 
-str+="$TI${AR:+ · by }$AR · "
-str+=$( echo "$LE" | awk '{
+TIME='{
     if (! $0) exit;
     h = int($0 / 3600);
     if (h) printf "%s:", h;
@@ -26,7 +29,9 @@ str+=$( echo "$LE" | awk '{
     printf  "%s%s", ((h && m < 10) ? 0 : ""), m;
     s = $0 % 60;
     printf ":%s%s",       (s < 10  ? 0 : ""), s;
-}' )$'\n'
+}'
+str+="$TI${AR:+ · by }$AR · "
+str+=$(echo "$PT"|awk "$TIME")"${PT:+ / }"$(echo "$LE"|awk "$TIME")$'\n'
 if [ "$AL" ]; then
     str+="${TN:+№.}$TN${TN:+ }from ${AL}"
     sep=' · '

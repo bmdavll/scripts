@@ -1,18 +1,23 @@
 #!/bin/bash
-# Based on script by Robert Smith <quad at symbo1ics dot com>
+#2011-04-15
 
 PROG=$(basename "$0")
+TRY=(jpg png)
 
 printUsage() {
 cat << -EOF-
-Usage:  $PROG  URL|CODE  [DIR]
+Usage:  $PROG  [-f] [-i]  URL|CODE...  [DIR]
 
   DIR:  optional directory to save to
   URL:  http://imgur.com/a/XXXXX[/all]
-  CODE: XXXXX
+  CODE: XXXXX[.xxx]
 
-Download images from an imgur album. When downloading, each dot represents a
-downloaded image, while each space represents a preexisting and skipped image.
+Download an entire imgur album or specific images. When downloading, each dot
+represents a downloaded image, while each space represents a skipped image.
+
+Options:
+  -f    overwrite existing files
+  -i    download individual imgur images; a list of CODEs must follow
 
 -EOF-
 }
@@ -29,7 +34,7 @@ makeTemp() {
 	fi
 }
 cleanUp() {
-	rm -f "$DATA"
+	rm -f "$OUT"
 }
 errorExit() {
 	echo >&2 "$PROG: $@"
@@ -39,73 +44,135 @@ errorExit() {
 trap "errorExit aborted" 2 3
 trap "errorExit terminated" 1 15
 
-if [ $# -eq 0 -o $# -gt 2 ]
+fflag=
+iflag=
+
+while getopts 'hfi' option
+do
+	case $option in
+	h)	printUsage
+		exit 0
+		;;
+	f)	fflag=1
+		;;
+	i)	iflag=1
+		;;
+	?)	printUsage >&2
+		exit 2
+		;;
+	esac
+done
+shift $((OPTIND - 1))
+
+DIR=
+declare -a list
+
+while [ $# -gt 0 ]; do
+	if [ $# -eq 1 -a -d "$1" ]; then
+		DIR="${1%/}"
+	else
+		list+=("${1%/}")
+	fi
+	shift
+done
+
+if [[ ${#list[@]} -eq 0 || ( ! "$iflag" && ${#list[@]} -gt 1 ) ]]
 then
 	printUsage
 	exit 2
-fi
-
-URL="${1%/}"
-DIR="${2%/}"
-
-if [[ "$URL" =~ ^[0-9A-Za-z]{5,}$ ]]; then
-	URL="http://imgur.com/a/$URL/all"
-elif [[ ! "$URL" =~ /all$ ]]; then
-	URL+="/all"
 fi
 
 if [[ ! -d "$DIR" ]]; then
 	DIR="$PWD"
 fi
 
-DATA=$(makeTemp)
+OUT=$(makeTemp)
 
-declare -i code=0 p=1
-declare -a list
+declare -i code=0
 
-while true; do
-	curl -s "$URL?p=$p" >"$DATA"
-	[ $? -ne 0 ] && errorExit "Page download error"
-
-	proceed=
-	for file in $(
-		grep -P -o '"http://i.imgur.com/\w{5,}s\.\w{3}"' "$DATA" | \
-		sed -e 's|"||g' -e 's|http://i.imgur.com/||' -e 's|s\.|.|'
-	); do
-		list+=("$file")
-		proceed=1
-	done
-
-	if [ ! "$proceed" ]; then
-		break
-	else
-		echo "Found page $p"
-		p+=1
+if [ ! "$iflag" ]; then
+	url="${list[0]}"
+	if [[ "$url" =~ ^[0-9A-Za-z]{5,}$ ]]; then
+		url="http://imgur.com/a/$url/all"
+	elif [[ ! "$url" =~ /all$ ]]; then
+		url+="/all"
 	fi
-done
 
-if (( p > 1 ))
-then
-	echo -n "Downloading ${#list[@]} images"
+	list=()
+	declare -i p=1
+	while true; do
+		curl -s "$url?p=$p" >"$OUT"
+		[ $? -ne 0 ] && errorExit "Page download error"
 
-	for file in "${list[@]}"
-	do
-		if [ ! -f "$DIR/$file" ]
-		then
-			curl -s --create-dirs -o "$DIR/$file" "http://i.imgur.com/$file"
-			if [ $? -eq 0 ]; then
-				echo -n "."
-			else
-				echo -n "x"
-				code+=1
-			fi
+		goon=
+		for file in $(
+			grep -P -o '"http://i.imgur.com/\w{5,}s\.\w{3}"' "$OUT" | \
+			sed -e 's|"||g' -e 's|http://i.imgur.com/||' -e 's|s\.|.|'
+		); do
+			list+=("$file")
+			goon=1
+		done
+
+		if [ ! "$goon" ]; then
+			break
 		else
-			echo -n " "
+			echo "Found page $p"
+			p+=1
 		fi
 	done
-	echo
-	echo Done
+	if (( p == 1 )); then
+		errorExit "No pages found"
+	fi
 fi
+
+fetch() {
+	local -a tries
+	if [[ "$1" =~ \. ]]; then
+		tries=("$1")
+	else
+		for ext in "${TRY[@]}"; do
+			tries+=("$1.$ext")
+		done
+	fi
+
+	local -i code
+	for file in "${tries[@]}"; do
+		if [[ -f "$DIR/$file" && ! "$fflag" ]]; then
+			return 1
+		fi
+		curl -s --dump-header "$OUT"		\
+			 --create-dirs -o "$DIR/$file"	\
+			 "http://i.imgur.com/$file"
+		code=$?
+		if grep '404 Not Found' "$OUT" &>/dev/null; then
+			continue
+		elif [ $code -eq 0 ]; then
+			date=$(grep '^Last-Modified:' "$OUT" | sed 's/[^:]\+://')
+			[ -n "$date" ] && touch -d "$date" "$DIR/$file"
+			return 0
+		fi
+	done
+	return 2
+}
+
+echo -n "Downloading ${#list[@]} image$( ((${#list[@]}>1)) && echo -n 's' )["
+
+for file in "${list[@]}"
+do
+	fetch "$file"
+	case $? in
+	0)	echo -n "."
+		;;
+	1)	echo -n " "
+		;;
+	*)	echo -n "x"
+		code+=1
+		;;
+	esac
+done
+
+echo ]
+echo Done
 
 cleanUp
 exit $code
