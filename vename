@@ -1,0 +1,61 @@
+#!/bin/bash
+#2011-04-17
+
+PROG=$(basename "$0")
+
+makeTemp() {
+	local TEMPDIR
+	if [ -d "$HOME/tmp" ]
+	then TEMPDIR="$HOME/tmp"
+	else TEMPDIR=/tmp
+	fi
+	mktemp -q --tmpdir="$TEMPDIR" "$PROG.$$.XXXX"
+	if [ $? -ne 0 ]; then
+		errorExit "Could not create temp file"
+	fi
+}
+cleanUp() {
+	rm -f "$TEMP"
+}
+errorExit() {
+	echo >&2 "$PROG: $@"
+	cleanUp
+	exit 3
+}
+trap "errorExit aborted" 2 3
+trap "errorExit terminated" 1 15
+
+if [ $# -ne 1 ] || ! which vim &>/dev/null; then
+	exit 2
+fi
+
+FDIR=$( dirname -- "$1")
+FILE=$(basename -- "$1")
+
+declare -i code=0
+
+TEMP=$(makeTemp)
+echo "$FILE" >"$TEMP"
+
+vim -f "$TEMP"
+
+read <"$TEMP"
+
+REPLY=$(printf -- "%s" "$REPLY" | perl -pe 's/^\s+|\s+$//g')
+
+echodo() {
+	echo "$@" && "$@"
+}
+
+if [[ "$REPLY" =~ [^[:blank:]] && "$REPLY" != "$FILE" ]]; then
+	if [ "$FDIR" = "." ]; then
+		FDIR=
+	else
+		FDIR+=/
+	fi
+	echodo mv -i "$1" "${FDIR}${REPLY}"
+	code=$?
+fi
+
+cleanUp
+exit $code
