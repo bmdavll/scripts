@@ -1,33 +1,42 @@
 #!/bin/bash
+#2011-03-25
+#2011-04-19
 
 PROG=$(basename "$0")
 IFS=$'\n'
 
 printUsage() {
-	echo "Usage: $PROG [-r] [-i] [-n] [-p]"
-	echo "       $(printf '%*s' ${#PROG} ' ') [-q MAX_QUAL] [-t|-s|-m|-l|-x|-g GEOMETRY] FILE..."
+cat << -EOF-
+Usage: $PROG [-r] [-i] [-n] [-p] [-S] [-D]
+       $(printf '%*s' ${#PROG} ' ') [-q MAX_QUAL] [-t|-s|-m|-l|-x|-g GEOMETRY] FILE...
+-EOF-
 }
 printHelp() {
-	printUsage
-	echo
-	echo "  -r	recursive"
-	echo "  -i	interactive"
-	echo "  -n	dry run"
-	echo "  -p	preserve date"
-	echo "  -t	tiny"
-	echo "  -s	small"
-	echo "  -m	medium (default)"
-	echo "  -l	large"
-	echo "  -x	extra large"
-	echo
-	echo "  GEOMETRY"
-	echo "	NONE"
-	echo "	{scale}%"
-	echo "	{width}  x{height}"
-	echo "	{max_width}x{max_height}  {max_width}x{max_height}>"
-	echo "	{width}x{height}!"
-	echo "	{area}@"
-	echo
+cat << -EOF-
+$(printUsage)
+
+  -r	recursive
+  -i	interactive
+  -n	dry run
+  -p	preserve date
+  -S	strip profiles and comments
+  -D	downsample to 2x2
+  -q	upper bound on quality
+
+  -t	tiny
+  -s	small
+  -m	medium (default)
+  -l	large
+  -x	extra large
+
+  GEOMETRY
+	NONE
+	{scale}%
+	{width}  x{height}
+	{max_width}x{max_height}  {max_width}x{max_height}>
+	{width}x{height}!
+	{area}@
+-EOF-
 }
 
 errorMsg() {
@@ -44,8 +53,9 @@ rflag=
 iflag=
 nflag=
 pflag=
+Sflag=
+Dflag=
 qflag=
-
 sflag=m
 MAX_QUAL=
 GEOMETRY=
@@ -56,7 +66,7 @@ if [ "$1" = "--help" ]; then
 	exit 0
 fi
 
-while getopts 'hrinptsmlxq:g:' option
+while getopts 'hrinpSDq:tsmlxg:' option
 do
 	case $option in
 	h)	printUsage
@@ -70,11 +80,15 @@ do
 		;;
 	p)	pflag=1
 		;;
-	t|s|m|l|x)
-		sflag="$option"
+	S)	Sflag=1
+		;;
+	D)	Dflag=1
 		;;
 	q)	qflag=1
 		MAX_QUAL="$OPTARG"
+		;;
+	t|s|m|l|x)
+		sflag="$option"
 		;;
 	g)	GEOMETRY="$OPTARG"
 		;;
@@ -90,7 +104,19 @@ if [[ $# -eq 0 || ( "$MAX_QUAL" && ! "$MAX_QUAL" =~ ^[1-9][0-9]?$ ) ]]; then
 	exit 2
 fi
 
-[ "$sflag" = "t" -a ! "$MAX_QUAL" ] && MAX_QUAL=90
+if [ "$sflag" = "t" ]; then
+	[ ! "$MAX_QUAL" ] && MAX_QUAL=90
+	Sflag=1
+fi
+
+if [ "$Sflag" ]; then
+	SD="-strip"
+else
+	SD=
+fi
+if [ "$Dflag" ]; then
+	SD+="${SD:+$IFS}-sampling-factor${IFS}2x2"
+fi
 
 declare -i code=0
 
@@ -203,10 +229,10 @@ downsize() {
 		echo $'\t'"$1"
 		return
 	else
-		echo mogrify ${g:+-resize} ${g:-$'\t'}$'\t'${qual:-$'\t'}$'\t'"$1"
+		echo mogrify ${g:+-resize} ${g:-$'\t'}$'\t'${qual:-$'\t'}${SD:+$'\t'}$SD$'\t'"$1"
 	fi
 	modtime="$(stat -c %y "$1")"
-	mogrify ${g:+-resize} $g $qual "$1" || code+=1
+	mogrify ${g:+-resize} $g $qual $SD "$1" || code+=1
 	if [[ "$pflag" && -n "$modtime" ]]; then
 		touch -d "$modtime" "$1"
 	fi
