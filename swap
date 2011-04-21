@@ -1,0 +1,150 @@
+#!/bin/bash
+#2011-04-19
+
+PROG=$(basename "$0")
+
+printUsage() {
+cat << -EOF-
+Usage: $PROG FILE_A FILE_B
+       $PROG  EXT_A [EXT_B] FILE...
+-EOF-
+}
+usageError() {
+	printUsage >&2
+	exit 2
+}
+
+if [ "$1" = "--help" ]; then
+	printUsage
+	exit 0
+fi
+
+while getopts 'h' option
+do
+	case $option in
+	h)	printUsage
+		exit 0
+		;;
+	?)	usageError
+		;;
+	esac
+done
+shift $((OPTIND - 1))
+
+echodo() {
+	echo "$@" && "$@"
+}
+swap() {
+	local PREF_A PREF_B BASE_A BASE_B T='%'
+
+	PREF_A=$(dirname -- "$1") && BASE_A=$(basename -- "$1")
+	PREF_B=$(dirname -- "$2") && BASE_B=$(basename -- "$2")
+	shift 2
+
+	if [[ "$BASE_A" =~ ^'..'?$ || "$BASE_B" =~ ^'..'?$ ]]; then
+		return 1
+	fi
+
+	if [ "$PREF_A" = "." ]
+	then PREF_A=
+	else PREF_A="$PREF_A/"
+	fi
+
+	if [ "$PREF_B" = "." ]
+	then PREF_B=
+	else PREF_B="$PREF_B/"
+	fi
+
+	if [ ! -e "${PREF_B}$BASE_B" ]
+	then
+		echodo mv "${PREF_A}$BASE_A" "${PREF_B}$BASE_B"
+	else
+		echodo mv -Ti "${PREF_A}$BASE_A" "${PREF_A}$T${BASE_A}$T"
+		if [ ! -e "${PREF_A}$BASE_A" ]; then
+			echodo mv -Ti "${PREF_B}$BASE_B"       "${PREF_A}$BASE_A" &&
+			echodo mv -Ti "${PREF_A}$T${BASE_A}$T" "${PREF_B}$BASE_B"
+		else
+			return 1
+		fi
+	fi
+}
+
+if [[ $# -lt 2 || -z "$1" ]]; then
+	usageError
+fi
+
+declare -i code=0
+
+if [ $# -eq 2 ] && [[ -d "$1" && -d "$2" || -f "$1" && -f "$2" ]]
+then
+	swap "$@"
+	exit
+fi
+
+if [[ -e "$1" || "$1" == */* ]]; then
+	usageError
+else
+	EXT_A="$1" && shift
+fi
+
+if [[ -e "$1" || "$1" == */* ]]; then
+	EXT_B=
+else
+	EXT_B="$1" && shift
+fi
+
+S='.'
+
+for file in "$@"; do
+	file=$(echo "$file" | sed 's|/*$||')
+
+	if [ ! -e "$file" ]; then
+		! echo >&2 "$file: No such file or directory"
+
+	elif [ "$EXT_B" ]; then
+		if [ -e "$file${S}$EXT_A" ]
+		then
+			if [ -e "$file${S}$EXT_B" ]; then
+				! echo >&2 "$file: Targets both exist"
+			else
+			echodo mv "$file" "$file${S}$EXT_B" &&
+			echodo mv         "$file${S}$EXT_A" "$file"
+			fi
+
+		elif [ -e "$file${S}$EXT_B" ]
+		then
+			echodo mv "$file" "$file${S}$EXT_A" &&
+			echodo mv         "$file${S}$EXT_B" "$file"
+
+		elif [[ "$file" == *"${S}$EXT_A" ]]
+		then
+			swap "$file" "${file%$EXT_A}$EXT_B"
+
+		elif [[ "$file" == *"${S}$EXT_B" ]]
+		then
+			swap "$file" "${file%$EXT_B}$EXT_A"
+
+		else
+			! echo >&2 "$file: No match"
+		fi
+
+	else
+		if [[ "$file" == *"${S}$EXT_A" ]]
+		then
+			dest="${file%${S}$EXT_A}"
+
+		elif [[ "$file" =~ ^(.+)"${S}$EXT_A${S}"([^/]+)$ ]]
+		then
+			dest="${BASH_REMATCH[1]}${S}${BASH_REMATCH[2]}"
+
+		else
+			dest="$file${S}$EXT_A"
+		fi
+
+		swap "$file" "$dest"
+
+	fi
+	[ $? -ne 0 ] && code+=1
+done
+
+exit $code
