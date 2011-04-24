@@ -1,6 +1,7 @@
 #!/bin/bash
 #2011-03-25
 #2011-04-19
+#2011-04-23
 
 PROG=$(basename "$0")
 IFS=$'\n'
@@ -57,9 +58,32 @@ Sflag=
 Dflag=
 qflag=
 sflag=m
+
 MAX_QUAL=
 GEOMETRY=
-SCALES=( 25.0 37.5 50.0 62.5 75.0 )
+
+# 16ᵗʰs
+SCALE_MIN=3
+SCALE_MAX=13
+
+declare -A REL_SIZE MIN_SIDE
+REL_SIZE=(
+	[t]=100
+	[s]=156
+	[m]=256
+	[l]=400
+	[x]=650
+)
+MIN_SIDE=(
+	[t]=640
+	[s]=800
+	[m]=1024
+	[l]=1280
+	[x]=1920
+)
+
+TYPE="${PROG##*-}"
+[[ ! "$TYPE" =~ ^[a-z]{3,4}$ ]] && errorExit "No filetype specified"
 
 if [ "$1" = "--help" ]; then
 	printHelp
@@ -118,13 +142,12 @@ if [ "$Dflag" ]; then
 	SD+="${SD:+$IFS}-sampling-factor${IFS}2x2"
 fi
 
+SIZE=$(echo "1024*(${REL_SIZE[$sflag]}-10) / 0.17" | bc)
+SIDE=${MIN_SIDE[$sflag]}
+
+# main
 declare -i code=0
-
 shopt -s nocasematch
-
-TYPE="${PROG##*-}"
-[[ ! "$TYPE" =~ ^[a-z]{3,4}$ ]] && errorExit "Bad filetype"
-
 
 downsize() {
 	g=
@@ -132,78 +155,27 @@ downsize() {
 	if [ -n "$GEOMETRY" ]; then
 		g="$GEOMETRY"
 	else
-		id="$(identify -format "%b %w %h" "$1")"
-		if [[ "$id" =~ ^([0-9]+)B\ ([0-9]+)\ ([0-9]+)$ ]]; then
-			s="${BASH_REMATCH[1]}"
-			x="${BASH_REMATCH[2]}"
-			y="${BASH_REMATCH[3]}"
-
-			if [ "$sflag" = "t" ]; then
-				if   (( $s >= 1337000 && ( $x >= 2560 || $y >= 2560 ) )); then
-					g=0
-				elif (( $s >=  584000 && ( $x >= 1707 || $y >= 1707 ) )); then
-					g=1
-				elif (( $s >=  316000 && ( $x >= 1280 || $y >= 1280 ) )); then
-					g=2
-				elif (( $s >=  260000 && ( $x >= 1024 || $y >= 1024 ) )); then
-					g=3
-				elif (( $s >=  140000 && ( $x >=  853 || $y >=  853 ) )); then
-					g=4
-				fi
-			elif [ "$sflag" = "s" ]; then
-				if   (( $s >= 1800000 && ( $x >= 3200 || $y >= 3200 ) )); then
-					g=0
-				elif (( $s >=  830000 && ( $x >= 2133 || $y >= 2133 ) )); then
-					g=1
-				elif (( $s >=  450000 && ( $x >= 1600 || $y >= 1600 ) )); then
-					g=2
-				elif (( $s >=  369000 && ( $x >= 1280 || $y >= 1280 ) )); then
-					g=3
-				elif (( $s >=  200000 && ( $x >= 1067 || $y >= 1067 ) )); then
-					g=4
-				fi
-			elif [ "$sflag" = "m" ]; then
-				if   (( $s >= 3200000 && ( $x >= 4096 || $y >= 4096 ) )); then
-					g=0
-				elif (( $s >= 1337000 && ( $x >= 2731 || $y >= 2731 ) )); then
-					g=1
-				elif (( $s >=  800000 && ( $x >= 2048 || $y >= 2048 ) )); then
-					g=2
-				elif (( $s >=  500000 && ( $x >= 1638 || $y >= 1638 ) )); then
-					g=3
-				elif (( $s >=  350000 && ( $x >= 1365 || $y >= 1365 ) )); then
-					g=4
-				fi
-			elif [ "$sflag" = "l" ]; then
-				if   (( $s >= 4504000 && ( $x >= 5120 || $y >= 5120 ) )); then
-					g=0
-				elif (( $s >= 2215000 && ( $x >= 3413 || $y >= 3413 ) )); then
-					g=1
-				elif (( $s >= 1160000 && ( $x >= 2560 || $y >= 2560 ) )); then
-					g=2
-				elif (( $s >= 1000000 && ( $x >= 2048 || $y >= 2048 ) )); then
-					g=3
-				elif (( $s >=  500000 && ( $x >= 1707 || $y >= 1707 ) )); then
-					g=4
-				fi
-			elif [ "$sflag" = "x" ]; then
-				if   (( $s >= 7944000 && ( $x >= 7680 || $y >= 7680 ) )); then
-					g=0
-				elif (( $s >= 3525000 && ( $x >= 5120 || $y >= 5120 ) )); then
-					g=1
-				elif (( $s >= 2100000 && ( $x >= 3840 || $y >= 3840 ) )); then
-					g=2
-				elif (( $s >= 1500000 && ( $x >= 3072 || $y >= 3072 ) )); then
-					g=3
-				elif (( $s >= 1000000 && ( $x >= 2560 || $y >= 2560 ) )); then
-					g=4
-				fi
-			else
-				errorExit "No scale specified"
-			fi
-			[ "$g" ] && g="${SCALES[$g]}%"
+		id="$(identify -format "%w %h" "$1" 2>/dev/null)"
+		if [[ "$id" =~ ^([0-9]+)\ ([0-9]+)$ ]]; then
+			g=$(perl -e '{
+				$s = '$SIZE';
+				$m = '$SIDE';
+				$w = '${BASH_REMATCH[1]}';
+				$h = '${BASH_REMATCH[2]}';
+				$f = sqrt( $s / ($w*$h) );
+				for ($i = '$SCALE_MIN'; $i <= '$SCALE_MAX'; $i++) {
+					if ($f <= $i/16 || abs($f - $i/16) < abs($f - ($i+1)/16)) {
+						if ($w * ($i/16) >= $m || $h * ($i/16) >= $m) {
+							printf "%.2f%", $i/16 * 100;
+							exit;
+						}
+					}
+				}
+			}')
 		else
 			errorMsg "$1: Error identifying file"
+			code+=1
+			return
 		fi
 	fi
 	if [[ "$MAX_QUAL" && "$MAX_QUAL" -lt $(identify -format "%Q" "$1") ]]; then
